@@ -1,0 +1,6 @@
+{
+  "name": "Prime Fitness MH19 | Built Different",
+  "description": "PRIME FITNESS | JALGAON — 4000+ SQ.FT. premier fitness center in Shivaji Nagar, Jalgaon. Strength, Cardio, HYROX, and Powerlifting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

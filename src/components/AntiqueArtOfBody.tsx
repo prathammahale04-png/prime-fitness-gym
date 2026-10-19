@@ -1,5 +1,6 @@
 import React from 'react';
 import { PRIME_GYM_DATA } from '../data/primeGymData';
+import athleticWomanImg from '../assets/images/athletic_woman_workout_1792235872529.jpg';
 
 interface AntiqueArtOfBodyProps {
   onLearnMore: () => void;
@@ -57,7 +58,7 @@ export const AntiqueArtOfBody: React.FC<AntiqueArtOfBodyProps> = ({ onLearnMore 
           <div className="lg:col-span-5 relative flex justify-center">
             <div className="relative max-w-lg w-full">
               <img
-                src="/src/assets/images/athletic_woman_workout_1792235872529.jpg"
+                src={athleticWomanImg || "/images/athletic_woman_workout_1792235872529.jpg"}
                 alt="Athletic Fitness Training at Prime Fitness"
                 className="w-full h-auto object-contain max-h-[500px]"
                 referrerPolicy="no-referrer"

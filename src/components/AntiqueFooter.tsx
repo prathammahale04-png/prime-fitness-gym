@@ -3,9 +3,10 @@ import { PRIME_GYM_DATA } from '../data/primeGymData';
 
 interface AntiqueFooterProps {
   onNavigate: (id: string) => void;
+  onOpenStaffPortal?: () => void;
 }
 
-export const AntiqueFooter: React.FC<AntiqueFooterProps> = ({ onNavigate }) => {
+export const AntiqueFooter: React.FC<AntiqueFooterProps> = ({ onNavigate, onOpenStaffPortal }) => {
   return (
     <footer className="bg-white border-t border-neutral-100 py-12 text-xs text-neutral-500">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
@@ -51,6 +52,14 @@ export const AntiqueFooter: React.FC<AntiqueFooterProps> = ({ onNavigate }) => {
           >
             CONTACTS
           </button>
+          {onOpenStaffPortal && (
+            <button
+              onClick={onOpenStaffPortal}
+              className="text-neutral-400 hover:text-[#f36b22] transition-colors cursor-pointer border-l border-neutral-200 pl-4"
+            >
+              STAFF PORTAL
+            </button>
+          )}
         </div>
 
         <p className="text-[11px] text-neutral-400">

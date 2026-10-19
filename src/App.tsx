@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AntiqueHeader } from './components/AntiqueHeader';
 import { AntiqueHero } from './components/AntiqueHero';
 import { AntiqueArtOfBody } from './components/AntiqueArtOfBody';
@@ -12,11 +13,65 @@ import { AntiquePrices } from './components/AntiquePrices';
 import { AntiqueJoinContact } from './components/AntiqueJoinContact';
 import { AntiqueFooter } from './components/AntiqueFooter';
 import { AntiqueJoinModal } from './components/AntiqueJoinModal';
+import { AdminLoginPage } from './components/auth/AdminLoginPage';
+import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { PricingPlan } from './data/primeGymData';
+import { Shield } from 'lucide-react';
 
-export default function App() {
+type AppView = 'public' | 'login' | 'admin';
+
+function AppContent() {
+  const { user, loading } = useAuth();
+
+  // Determine initial view based on browser URL path
+  const getInitialView = (): AppView => {
+    const path = window.location.pathname.toLowerCase();
+    if (path.startsWith('/admin')) return 'admin';
+    if (path.startsWith('/login')) return 'login';
+    return 'public';
+  };
+
+  const [currentView, setCurrentView] = useState<AppView>(getInitialView);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
+
+  // Synchronize browser history and path
+  const navigateTo = (view: AppView) => {
+    setCurrentView(view);
+    const targetPath = view === 'public' ? '/' : `/${view}`;
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ view }, '', targetPath);
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state?.view) {
+        setCurrentView(event.state.view);
+      } else {
+        const path = window.location.pathname.toLowerCase();
+        if (path.startsWith('/admin')) setCurrentView('admin');
+        else if (path.startsWith('/login')) setCurrentView('login');
+        else setCurrentView('public');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Protected route enforcement
+  useEffect(() => {
+    if (!loading) {
+      if (currentView === 'admin' && !user) {
+        // Unauthenticated access to admin redirects to login
+        navigateTo('login');
+      } else if (currentView === 'login' && user) {
+        // Authenticated users accessing login redirect to admin
+        navigateTo('admin');
+      }
+    }
+  }, [currentView, user, loading]);
 
   const scrollTo = (id: string) => {
     const element = document.getElementById(id);
@@ -35,6 +90,40 @@ export default function App() {
     setIsJoinOpen(true);
   };
 
+  // Loading Screen for Auth Checking
+  if (loading && currentView === 'admin') {
+    return (
+      <div className="min-h-screen bg-[#0d0f12] text-white flex flex-col items-center justify-center p-6">
+        <div className="w-12 h-12 bg-[#161920] border border-neutral-800 flex items-center justify-center text-[#f36b22] mb-4">
+          <Shield className="w-6 h-6 animate-pulse" />
+        </div>
+        <p className="font-headline font-bold uppercase tracking-wider text-xs text-neutral-400">
+          Verifying Security Credentials...
+        </p>
+      </div>
+    );
+  }
+
+  // 1. Owner & Staff Login View
+  if (currentView === 'login') {
+    return (
+      <AdminLoginPage
+        onBackToWebsite={() => navigateTo('public')}
+        onLoginSuccess={() => navigateTo('admin')}
+      />
+    );
+  }
+
+  // 2. Protected Admin Dashboard View
+  if (currentView === 'admin' && user) {
+    return (
+      <AdminDashboardLayout
+        onViewWebsite={() => navigateTo('public')}
+      />
+    );
+  }
+
+  // 3. Public Gym Website (Exact Working Design Preserved)
   return (
     <div className="min-h-screen bg-white text-neutral-900 flex flex-col font-sans selection:bg-[#f36b22] selection:text-white">
       {/* Header: Spartan Helmet + PRIME FITNESS, Nav: ABOUT · TRAINERS · PRICES · CONTACTS */}
@@ -44,7 +133,7 @@ export default function App() {
       />
 
       <main className="flex-1">
-        {/* Section 1: Hero ("BUILD YOUR BODY" giant background watermark, B&W athletic physique) */}
+        {/* Section 1: Hero ("BUILD YOUR BODY" giant background watermark, panoramic athlete) */}
         <AntiqueHero
           onReadMore={() => scrollTo('about')}
         />
@@ -68,9 +157,10 @@ export default function App() {
         />
       </main>
 
-      {/* Clean Footer */}
+      {/* Clean Footer with discrete Staff Portal link */}
       <AntiqueFooter
         onNavigate={scrollTo}
+        onOpenStaffPortal={() => navigateTo('login')}
       />
 
       {/* Interactive Registration & Trial Pass Modal */}
@@ -80,5 +170,13 @@ export default function App() {
         selectedPlan={selectedPlan}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }

@@ -1,4 +1,5 @@
 import React from 'react';
+import heroPanoramaImg from '../assets/images/antique_hero_panorama_bg_1792239521892.jpg';
 
 interface AntiqueHeroProps {
   onReadMore?: () => void;
@@ -10,7 +11,7 @@ export const AntiqueHero: React.FC<AntiqueHeroProps> = () => {
       {/* Background Panoramic Athlete Image sent by user */}
       <div className="absolute inset-0 z-0 select-none pointer-events-none">
         <img
-          src="/src/assets/images/antique_hero_panorama_bg_1792239521892.jpg"
+          src={heroPanoramaImg || "/images/antique_hero_panorama_bg_1792239521892.jpg"}
           alt="Prime Fitness Hero Athlete Background"
           className="w-full h-full object-cover object-left lg:object-center filter brightness-100 contrast-105"
           referrerPolicy="no-referrer"

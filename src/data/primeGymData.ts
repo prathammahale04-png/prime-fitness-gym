@@ -32,13 +32,19 @@ export const PRIME_GYM_DATA = {
   instagramUrl: 'https://www.instagram.com/primefitness_mh19/',
 };
 
+import trainerStrengthImg from '../assets/images/facility_strength_zone_1791890949054.jpg';
+import trainerHyroxImg from '../assets/images/trainer_hyrox_female_1792235874601.jpg';
+import trainerTurfImg from '../assets/images/facility_functional_turf_1791890950007.jpg';
+import trainerCardioImg from '../assets/images/facility_cardio_deck_1791890948475.jpg';
+import trainerOlyImg from '../assets/images/exhibition_barbell_knurling_1791892495905.jpg';
+
 export const TRAINERS: Trainer[] = [
   {
     id: 'trainer-1',
     name: 'AMIT PATIL',
     role: 'Strength & Powerlifting Coach',
     specialty: 'Powerlifting',
-    image: '/src/assets/images/facility_strength_zone_1791890949054.jpg',
+    image: trainerStrengthImg || '/images/facility_strength_zone_1791890949054.jpg',
     bio: 'State powerlifting medalist specializing in heavy compound mechanics, squat & deadlift lockout technique.',
   },
   {
@@ -46,7 +52,7 @@ export const TRAINERS: Trainer[] = [
     name: 'SARA CAVIL',
     role: 'Head HYROX & Conditioning Coach',
     specialty: 'HYROX & MetCon',
-    image: '/src/assets/images/trainer_hyrox_female_1792235874601.jpg',
+    image: trainerHyroxImg || '/images/trainer_hyrox_female_1792235874601.jpg',
     bio: 'Certified HYROX master trainer and functional conditioning coach with 8+ years coaching athletes.',
   },
   {
@@ -54,7 +60,7 @@ export const TRAINERS: Trainer[] = [
     name: 'VIKRAM JADHAV',
     role: 'Senior Transformation Specialist',
     specialty: 'Hypertrophy & Fat Loss',
-    image: '/src/assets/images/facility_functional_turf_1791890950007.jpg',
+    image: trainerTurfImg || '/images/facility_functional_turf_1791890950007.jpg',
     bio: 'Precision hypertrophy programmer with focus on biomechanics, progressive overload and nutrition tracking.',
   },
   {
@@ -62,7 +68,7 @@ export const TRAINERS: Trainer[] = [
     name: 'NEHA RATHOD',
     role: 'Cardio & Aerobic Endurance Coach',
     specialty: 'Cardio & Agility',
-    image: '/src/assets/images/facility_cardio_deck_1791890948475.jpg',
+    image: trainerCardioImg || '/images/facility_cardio_deck_1791890948475.jpg',
     bio: 'High-intensity interval trainer dedicated to aerobic threshold building, VO2 max and core stability.',
   },
   {
@@ -70,7 +76,7 @@ export const TRAINERS: Trainer[] = [
     name: 'RAHUL SHINDE',
     role: 'Olympic Lifting & Mobility Coach',
     specialty: 'Olympic Lifting',
-    image: '/src/assets/images/exhibition_barbell_knurling_1791892495905.jpg',
+    image: trainerOlyImg || '/images/exhibition_barbell_knurling_1791892495905.jpg',
     bio: 'Expert in shoulder stability, hip mobility, clean & jerk velocity and injury-free longevity.',
   },
 ];

@@ -1,7 +1,27 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+/**
+ * Normalizes any Supabase URL by extracting only the origin (scheme + domain + port).
+ * This strips any accidental trailing slashes ('/'), REST endpoints ('/rest/v1'), 
+ * or Auth endpoints ('/auth/v1') that users may have copied from the Supabase dashboard.
+ */
+export const normalizeSupabaseUrl = (rawUrl?: string): string => {
+  if (!rawUrl) return '';
+  const trimmed = rawUrl.trim();
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    return trimmed
+      .replace(/\/rest\/v1\/?$/i, '')
+      .replace(/\/auth\/v1\/?$/i, '')
+      .replace(/\/+$/, '');
+  }
+};
+
+const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const supabaseUrl = normalizeSupabaseUrl(rawUrl);
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(
@@ -28,7 +48,7 @@ export const getSupabase = (): SupabaseClient => {
   }
 
   if (isSupabaseConfigured()) {
-    clientInstance = createClient(supabaseUrl!, supabaseAnonKey!, {
+    clientInstance = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,

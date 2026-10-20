@@ -10,19 +10,17 @@ interface AdminHeaderProps {
 }
 
 const SECTION_TITLES: Record<AdminSection, string> = {
-  overview: 'System Overview & Diagnostics',
-  members: 'Member Directory & Profiles',
-  packages: 'Membership Packages & Plans',
-  billing: 'Billing, Invoices & Sales Records',
+  overview: 'Operations Overview',
+  members: 'Members Directory',
+  packages: 'Membership Packages',
+  billing: 'Billing & Sales Ledger',
   checkin: 'Daily Attendance & Check-in',
-  analytics: 'Revenue & Membership Analytics',
+  analytics: 'Performance & Revenue Analytics',
   events: 'Gym Events & Workshops',
-  trainers: 'Trainer Roster & Schedules',
-  enquiries: 'Website Leads & Follow-ups',
-  challenges: 'Fitness Challenges & Contests',
-  automation: 'Automation Centre & Reminders',
-  import: 'Member Data Import & Migration',
-  settings: 'System Configuration & Security',
+  trainers: 'Coaching Staff & Trainers',
+  enquiries: 'Leads & Enquiries Pipeline',
+  challenges: 'Fitness Challenges & Leaderboards',
+  settings: 'Institution Settings',
 };
 
 export const AdminHeader: React.FC<AdminHeaderProps> = ({
@@ -32,22 +30,22 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
 }) => {
   const { user, profile, role, signOut } = useAuth();
 
-  const roleLabel = role ? role.toUpperCase() : 'STAFF';
+  const roleLabel = role ? role.toUpperCase() : 'OWNER';
 
   return (
-    <header className="h-16 bg-[#14171d] border-b border-neutral-800/80 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-16 bg-[#111216] border-b border-neutral-800/90 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-3">
         {/* Mobile Hamburger Toggle */}
         <button
           onClick={onOpenMobileSidebar}
-          className="lg:hidden p-2 text-neutral-400 hover:text-white border border-neutral-800 bg-[#0e1014] cursor-pointer"
+          className="lg:hidden p-2 text-neutral-400 hover:text-white border border-neutral-800 bg-[#0e1014] rounded-lg cursor-pointer"
         >
           <Menu className="w-5 h-5" />
         </button>
 
         {/* Section Title */}
         <div>
-          <h1 className="text-sm sm:text-base font-headline font-black uppercase tracking-tight text-white leading-none">
+          <h1 className="text-sm sm:text-base font-headline font-bold uppercase tracking-tight text-white leading-none">
             {SECTION_TITLES[currentSection]}
           </h1>
           <p className="text-[10px] font-mono text-neutral-400 tracking-wider uppercase mt-1 hidden sm:block">
@@ -61,7 +59,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
         {/* Quick Link to Public Website */}
         <button
           onClick={onViewWebsite}
-          className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 hover:text-white bg-[#1b1f27] hover:bg-[#222733] border border-neutral-700/80 transition-colors cursor-pointer"
+          className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-300 hover:text-white bg-[#171920] hover:bg-[#20232d] border border-neutral-700/80 rounded-lg transition-colors cursor-pointer"
           title="Open Public Gym Website"
         >
           <ExternalLink className="w-3.5 h-3.5 text-[#f36b22]" />
@@ -70,12 +68,12 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
 
         {/* User Badge */}
         <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-neutral-800">
-          <div className="w-8 h-8 rounded-none bg-[#1e232d] border border-neutral-700 flex items-center justify-center text-neutral-300">
+          <div className="w-8 h-8 rounded-lg bg-[#1a1d26] border border-neutral-700 flex items-center justify-center text-neutral-300">
             <User className="w-4 h-4 text-[#f36b22]" />
           </div>
           <div className="hidden sm:block text-left">
             <span className="text-xs font-medium text-white block leading-tight truncate max-w-[140px]">
-              {profile?.full_name || user?.email || 'Administrator'}
+              {profile?.full_name || user?.email || 'Pranav Sonawane'}
             </span>
             <div className="flex items-center gap-1 mt-0.5">
               <ShieldCheck className="w-3 h-3 text-[#f36b22]" />
@@ -89,7 +87,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
         {/* Logout Button */}
         <button
           onClick={() => signOut()}
-          className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 border border-neutral-800 transition-colors cursor-pointer"
+          className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 border border-neutral-800 rounded-lg transition-colors cursor-pointer"
           title="Sign Out"
         >
           <LogOut className="w-4 h-4" />

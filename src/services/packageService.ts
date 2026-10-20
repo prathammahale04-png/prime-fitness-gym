@@ -1,0 +1,120 @@
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { MembershipPackage } from '../types/database.types';
+
+export const DEFAULT_PACKAGES: MembershipPackage[] = [
+  {
+    id: 'default-pkg-1',
+    name: '1 MONTH STANDARD',
+    duration_days: 30,
+    duration_type: 'monthly',
+    price: 1500,
+    description: 'Full gym access with machine and free weight coaching',
+    features: ['Full 4000+ Sq.Ft. gym access', 'General floor supervision', 'Locker & changing room', 'Basic fitness assessment'],
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'default-pkg-2',
+    name: '3 MONTHS INTENSIVE',
+    duration_days: 90,
+    duration_type: 'quarterly',
+    price: 3500,
+    description: 'Our most popular progressive overload quarterly cycle',
+    features: ['Full 4000+ Sq.Ft. gym access', 'Dedicated workout routine card', 'Body composition tracking', 'HYROX conditioning turf access', 'Diet consultation guideline'],
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'default-pkg-3',
+    name: '6 MONTHS ATHLETIC',
+    duration_days: 180,
+    duration_type: 'half_yearly',
+    price: 6000,
+    description: 'Comprehensive strength and body composition transformation',
+    features: ['Full 4000+ Sq.Ft. gym access', 'Bi-weekly body measurement audits', 'Advanced progressive overload planning', 'Full conditioning & turf access', 'Priority personal trainer slot booking'],
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'default-pkg-4',
+    name: '12 MONTHS PRIME PRO',
+    duration_days: 365,
+    duration_type: 'yearly',
+    price: 10000,
+    description: 'The ultimate annual discipline commitment with prime perks',
+    features: ['Full 4000+ Sq.Ft. unlimited gym access', 'Complete physique & mobility blueprint', 'Quarterly goal assessment with head coach', 'Zero freeze fees (up to 30 days pause)', 'Complimentary Prime Fitness athlete shaker'],
+    is_active: true,
+    created_at: new Date().toISOString(),
+  },
+];
+
+export async function getPackages(): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+  if (!isSupabaseConfigured()) {
+    return { packages: DEFAULT_PACKAGES, isLive: false };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('packages')
+      .select('*')
+      .order('price', { ascending: true });
+
+    if (error) {
+      console.warn('Packages fetch error, using defaults:', error.message);
+      return { packages: DEFAULT_PACKAGES, isLive: false };
+    }
+
+    if (!data || data.length === 0) {
+      return { packages: DEFAULT_PACKAGES, isLive: true };
+    }
+
+    return { packages: data as MembershipPackage[], isLive: true };
+  } catch (err) {
+    console.warn('Failed to load packages from database:', err);
+    return { packages: DEFAULT_PACKAGES, isLive: false };
+  }
+}
+
+export async function createPackage(pkg: Omit<MembershipPackage, 'id' | 'created_at'>): Promise<{ success: boolean; data?: MembershipPackage; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: 'Database not configured in environment variables.' };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('packages')
+      .insert([pkg])
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, data: data as MembershipPackage };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to create package' };
+  }
+}
+
+export async function updatePackage(
+  id: string,
+  updates: Partial<Omit<MembershipPackage, 'id' | 'created_at'>>
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: 'Database not configured in environment variables.' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('packages')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to update package' };
+  }
+}
+
+export async function togglePackageActive(id: string, currentStatus: boolean): Promise<{ success: boolean; error?: string }> {
+  return updatePackage(id, { is_active: !currentStatus });
+}

@@ -38,15 +38,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .maybeSingle();
 
+      const isDesignatedOwner = userEmail.toLowerCase() === 'pranavsonawane1328@gmail.com';
+
       if (profileErr) {
-        console.warn('Profile fetch warning:', profileErr.message);
+        console.warn('Profile fetch warning (table may be pending migration):', profileErr.message);
         // Fallback profile if table is not yet migrated, preserving email
         return {
           id: userId,
           email: userEmail,
-          full_name: 'Gym Administrator',
+          full_name: isDesignatedOwner ? 'Gym Owner' : 'Gym Staff',
           phone: null,
-          role: 'owner', // Fallback for owner when tables are pending
+          role: isDesignatedOwner ? 'owner' : 'staff',
           is_active: true,
           avatar_url: null,
           created_at: new Date().toISOString(),
@@ -63,13 +65,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return data as UserProfile;
       }
 
-      // If no profile row exists yet, return an initial owner profile
+      // If no profile row exists in database yet, only designated owner gets owner privileges
       return {
         id: userId,
         email: userEmail,
-        full_name: 'Gym Administrator',
+        full_name: isDesignatedOwner ? 'Gym Owner' : 'Gym Staff',
         phone: null,
-        role: 'owner',
+        role: isDesignatedOwner ? 'owner' : 'staff',
         is_active: true,
         avatar_url: null,
         created_at: new Date().toISOString(),

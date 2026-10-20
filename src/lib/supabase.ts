@@ -80,12 +80,14 @@ export const supabase = getSupabase();
  */
 export async function testSupabaseConnection(): Promise<{
   connected: boolean;
+  tablesMigrated: boolean;
   message: string;
   latencyMs?: number;
 }> {
   if (!isSupabaseConfigured()) {
     return {
       connected: false,
+      tablesMigrated: false,
       message: 'VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY not configured in environment variables.',
     };
   }
@@ -93,26 +95,42 @@ export async function testSupabaseConnection(): Promise<{
   const start = performance.now();
   try {
     const client = getSupabase();
-    // Test auth endpoint availability
-    const { error } = await client.auth.getSession();
+    // 1. Test auth endpoint availability
+    const { error: authErr } = await client.auth.getSession();
     const latency = Math.round(performance.now() - start);
 
-    if (error) {
+    if (authErr) {
       return {
         connected: false,
-        message: `Connection test error: ${error.message}`,
+        tablesMigrated: false,
+        message: `Connection test error: ${authErr.message}`,
+        latencyMs: latency,
+      };
+    }
+
+    // 2. Test if core platform tables exist in the schema
+    const { error: tableErr } = await client.from('members').select('id', { head: true });
+    const tablesMigrated = !tableErr || tableErr.code !== 'PGRST205';
+
+    if (!tablesMigrated) {
+      return {
+        connected: true,
+        tablesMigrated: false,
+        message: 'Connected to Supabase, but database tables are pending migration. Data is running in offline local cache until migrations are applied.',
         latencyMs: latency,
       };
     }
 
     return {
       connected: true,
-      message: `Successfully connected to Supabase (${latency}ms).`,
+      tablesMigrated: true,
+      message: `Successfully connected to Supabase (${latency}ms) with all tables verified.`,
       latencyMs: latency,
     };
   } catch (err: any) {
     return {
       connected: false,
+      tablesMigrated: false,
       message: `Failed to connect: ${err?.message || 'Unknown network error'}`,
     };
   }

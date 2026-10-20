@@ -10,7 +10,7 @@ interface AdminLoginPageProps {
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onBackToWebsite, onLoginSuccess }) => {
   const { signInWithEmail, isConfigured, error, clearError } = useAuth();
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('pranavsonawane1328@gmail.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -155,15 +155,15 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onBackToWebsite,
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent font-headline font-bold uppercase tracking-wider text-xs text-white bg-[#f36b22] hover:bg-[#d95614] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#f36b22] focus:ring-offset-[#14171d] disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer shadow-lg shadow-[#f36b22]/20"
+                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent font-headline font-bold uppercase tracking-wider text-xs text-white bg-[#f36b22] hover:bg-[#d95614] focus:outline-none focus:ring-2 focus:ring-[#f36b22] disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-[#f36b22]/20 rounded-lg"
               >
                 {isSubmitting ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Authenticating...</span>
+                    <span>Verifying Credentials...</span>
                   </>
                 ) : (
-                  <span>Access Management Console</span>
+                  <span>Sign In with Supabase Credentials</span>
                 )}
               </button>
             </div>

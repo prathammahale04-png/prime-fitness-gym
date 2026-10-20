@@ -767,6 +767,11 @@ export const GymService = {
         if (!error && data) {
           return data as GymSettings;
         }
+        // Fallback to public projection view if base table is restricted to staff/owners
+        const { data: pubData, error: pubErr } = await supabase.from('public_gym_settings').select('*').eq('id', 'prime_fitness_main').maybeSingle();
+        if (!pubErr && pubData) {
+          return pubData as GymSettings;
+        }
       } catch (err) {
         console.warn('Supabase getSettings fallback:', err);
       }

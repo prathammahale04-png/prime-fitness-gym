@@ -59,19 +59,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data) {
         if (!data.is_active) {
           await supabase.auth.signOut();
-          setError('This staff account has been deactivated. Please contact the gym owner.');
+          setError('This account is pending approval or has been deactivated. Please contact the gym owner.');
           return null;
         }
         return data as UserProfile;
       }
 
-      // If no profile row exists in database yet, only designated owner gets owner privileges
+      // If no profile row exists in database yet, only designated owner gets initial access
+      if (!isDesignatedOwner) {
+        await supabase.auth.signOut();
+        setError('This account is pending owner approval. Please contact the gym owner.');
+        return null;
+      }
+
       return {
         id: userId,
         email: userEmail,
-        full_name: isDesignatedOwner ? 'Gym Owner' : 'Gym Staff',
+        full_name: 'Gym Owner',
         phone: null,
-        role: isDesignatedOwner ? 'owner' : 'staff',
+        role: 'owner',
         is_active: true,
         avatar_url: null,
         created_at: new Date().toISOString(),

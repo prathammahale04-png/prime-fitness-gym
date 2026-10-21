@@ -3,6 +3,7 @@ import { OverviewStats, getOverviewStats } from '../../services/gymPlatformServi
 import { testSupabaseConnection } from '../../lib/supabase';
 import { PRIME_GYM_DATA } from '../../data/primeGymData';
 import { AdminSection } from '../../types/database.types';
+import { normalizeIndianPhoneNumber, buildWhatsAppLink, generateReminderMessage } from '../../utils/reminderUtils';
 import {
   Users,
   CreditCard,
@@ -50,10 +51,18 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
   }, [period]);
 
   const handleSendReminder = (m: any) => {
-    const cleanPhone = m.phone.replace(/[^0-9]/g, '');
-    const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-    const text = `Hi ${m.full_name}, this is a friendly reminder from Prime Fitness MH19 Jalgaon. Your ${m.package_name || 'gym'} membership expires on ${m.expiry_date}. To ensure uninterrupted training and locker access, please renew at your earliest convenience. Thank you!`;
-    window.open(`https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodeURIComponent(text)}`, '_blank');
+    const validation = normalizeIndianPhoneNumber(m.phone);
+    if (!validation.isValid) {
+      if (onNavigateSection) {
+        onNavigateSection('reminders');
+      } else {
+        alert(`Invalid phone number for ${m.full_name}: ${validation.errorReason}`);
+      }
+      return;
+    }
+    const text = generateReminderMessage(m, 'soon');
+    const url = buildWhatsAppLink(validation.normalizedNumber, text);
+    window.open(url, '_blank', 'noopener,noreferrer');
     setCopiedId(m.id);
     setTimeout(() => setCopiedId(null), 3000);
   };
@@ -227,9 +236,20 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
                 Expiring Memberships (Next 7 Days)
               </h3>
             </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              {stats?.expiringInSevenDays.length || 0} Expiring Soon
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {stats?.expiringInSevenDays.length || 0} Expiring Soon
+              </span>
+              {onNavigateSection && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateSection('reminders')}
+                  className="text-[11px] font-mono text-[#25d366] hover:underline flex items-center gap-1 cursor-pointer ml-1"
+                >
+                  <span>Reminders Hub →</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {!stats || stats.expiringInSevenDays.length === 0 ? (

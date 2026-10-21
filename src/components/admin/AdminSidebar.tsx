@@ -18,6 +18,7 @@ import {
   LogOut,
   ExternalLink,
   Flame,
+  BellRing,
 } from 'lucide-react';
 
 interface AdminSidebarProps {
@@ -38,13 +39,14 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'members', label: 'Members', icon: Users },
+  { id: 'reminders', label: 'Expiry Reminders', icon: BellRing },
   { id: 'packages', label: 'Packages', icon: Layers },
   { id: 'billing', label: 'Billing & Sales', icon: CreditCard },
   { id: 'checkin', label: 'Check-in', icon: QrCode },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'events', label: 'Events', icon: Calendar },
   { id: 'trainers', label: 'Trainers', icon: UserCheck },
-  { id: 'enquiries', label: 'Enquiries', icon: MessageSquare },
+  { id: 'enquiries', label: 'Leads & Enquiries', icon: MessageSquare },
   { id: 'challenges', label: 'Challenges', icon: Trophy },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];

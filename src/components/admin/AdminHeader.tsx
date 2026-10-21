@@ -21,6 +21,7 @@ const SECTION_TITLES: Record<AdminSection, string> = {
   enquiries: 'Leads & Enquiries Pipeline',
   challenges: 'Fitness Challenges & Leaderboards',
   settings: 'Institution Settings',
+  reminders: 'Membership Expiry Reminders',
 };
 
 export const AdminHeader: React.FC<AdminHeaderProps> = ({

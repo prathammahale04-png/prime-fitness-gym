@@ -23,7 +23,8 @@ export type AdminSection =
   | 'trainers'
   | 'enquiries'
   | 'challenges'
-  | 'settings';
+  | 'settings'
+  | 'reminders';
 
 export type PackageDurationType = 'monthly' | 'quarterly' | 'half_yearly' | 'yearly' | 'custom';
 

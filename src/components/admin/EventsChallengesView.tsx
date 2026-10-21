@@ -26,6 +26,9 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isChallengeModalOpen, setIsChallengeModalOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
   // Event form
   const [eventTitle, setEventTitle] = useState('');
@@ -61,23 +64,47 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eventTitle.trim()) return;
+    if (!eventTitle.trim()) {
+      setModalError('Please enter an event title.');
+      return;
+    }
 
-    await saveEvent({
-      title: eventTitle.trim(),
-      description: eventDesc.trim() || null,
-      event_date: eventDate,
-      event_time: eventTime,
-      location: eventLocation,
-      registration_count: 0,
-      max_capacity: Number(maxCapacity),
-      is_published: true,
-    });
+    setIsSubmittingEvent(true);
+    setModalError(null);
 
-    setIsEventModalOpen(false);
-    setEventTitle('');
-    setEventDesc('');
-    await loadData();
+    try {
+      const res = await saveEvent({
+        title: eventTitle.trim(),
+        description: eventDesc.trim() || null,
+        event_date: eventDate,
+        event_time: eventTime,
+        location: eventLocation,
+        registration_count: 0,
+        max_capacity: Number(maxCapacity) || 30,
+        is_published: true,
+      });
+
+      if (!res.success) {
+        setModalError(res.error || 'Failed to save event. Please check database permissions.');
+        setIsSubmittingEvent(false);
+        return;
+      }
+
+      if (res.error) {
+        setStatusNotice(res.error);
+        setTimeout(() => setStatusNotice(null), 8000);
+      }
+
+      setIsEventModalOpen(false);
+      setEventTitle('');
+      setEventDesc('');
+      setModalError(null);
+      await loadData();
+    } catch (err: any) {
+      setModalError(err.message || 'An unexpected error occurred while saving the event.');
+    } finally {
+      setIsSubmittingEvent(false);
+    }
   };
 
   const handleCreateChallenge = async (e: React.FormEvent) => {
@@ -102,6 +129,19 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 space-y-6">
+      {/* Status Notice Banner */}
+      {statusNotice && (
+        <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl text-xs flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 font-mono text-[10px] uppercase font-bold rounded">Notice</span>
+            <span>{statusNotice}</span>
+          </div>
+          <button onClick={() => setStatusNotice(null)} className="text-amber-400 hover:text-white cursor-pointer ml-3">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-800">
         <div>
@@ -155,8 +195,26 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
 
       {/* Content Grid */}
       {activeTab === 'events' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {events.map(ev => {
+        events.length === 0 ? (
+          <div className="py-16 text-center bg-[#14161d] border border-neutral-800 rounded-xl p-8 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-[#f36b22]/10 border border-[#f36b22]/30 flex items-center justify-center mx-auto text-[#f36b22]">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-headline font-bold text-white uppercase tracking-wider">No Events In List</h3>
+            <p className="text-xs text-neutral-400 max-w-sm mx-auto leading-relaxed">
+              Create your first gym event or lifting clinic to engage members and community athletes.
+            </p>
+            <button
+              onClick={() => setIsEventModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-bold uppercase rounded-lg transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create First Event</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {events.map(ev => {
             const shareText = `🔥 PRIME FITNESS MH19 EVENT ANNOUNCEMENT!\n\n🏆 ${ev.title}\n📅 Date: ${ev.event_date}\n⏰ Time: ${ev.event_time}\n🏢 Location: ${ev.location}\n\nJoin our athlete community. Contact front desk or visit primefitnessmh19 to register!`;
 
             return (
@@ -211,6 +269,7 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
             );
           })}
         </div>
+        )
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {challenges.map(ch => {
@@ -282,6 +341,15 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
             </div>
 
             <form onSubmit={handleCreateEvent} className="mt-5 space-y-4 text-xs">
+              {modalError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs flex items-center justify-between">
+                  <span>{modalError}</span>
+                  <button type="button" onClick={() => setModalError(null)} className="text-red-400 hover:text-white cursor-pointer ml-2">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               <div>
                 <label className="block font-medium text-neutral-300 mb-1">Event Title *</label>
                 <input
@@ -338,19 +406,40 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
                 />
               </div>
 
+              <div>
+                <label className="block font-medium text-neutral-300 mb-1">Maximum Participant Capacity</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="500"
+                  value={maxCapacity}
+                  onChange={e => setMaxCapacity(parseInt(e.target.value, 10) || 30)}
+                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white focus:border-[#f36b22] focus:outline-none font-mono"
+                />
+              </div>
+
               <div className="flex justify-end gap-3 pt-3 border-t border-neutral-800">
                 <button
                   type="button"
+                  disabled={isSubmittingEvent}
                   onClick={() => setIsEventModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-700 rounded-lg text-neutral-300"
+                  className="px-4 py-2 border border-neutral-700 rounded-lg text-neutral-300 hover:text-white cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#f36b22] text-white font-bold rounded-lg hover:bg-[#d95614]"
+                  disabled={isSubmittingEvent}
+                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] disabled:opacity-50 text-white font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-2"
                 >
-                  Publish Event
+                  {isSubmittingEvent ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Publishing...</span>
+                    </>
+                  ) : (
+                    <span>Publish Event</span>
+                  )}
                 </button>
               </div>
             </form>

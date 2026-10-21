@@ -12,6 +12,7 @@ import { EventsChallengesView } from './EventsChallengesView';
 import { TrainersAdminView } from './TrainersAdminView';
 import { EnquiriesView } from './EnquiriesView';
 import { InstitutionSettingsView } from './InstitutionSettingsView';
+import { MembershipRemindersView } from './MembershipRemindersView';
 
 interface AdminDashboardLayoutProps {
   onViewWebsite: () => void;
@@ -70,6 +71,9 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({ onVi
           )}
           {currentSection === 'challenges' && (
             <EventsChallengesView initialTab="challenges" />
+          )}
+          {currentSection === 'reminders' && (
+            <MembershipRemindersView onNavigateSection={setCurrentSection} />
           )}
           {currentSection === 'settings' && (
             <InstitutionSettingsView />

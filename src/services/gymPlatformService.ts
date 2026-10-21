@@ -583,42 +583,173 @@ export async function updateEnquiryStatus(
    EVENTS & CHALLENGES
 ========================================================================= */
 export async function getEvents(): Promise<GymEventRecord[]> {
+  const localRecords = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
+
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase.from('events').select('*').order('event_date', { ascending: true });
-      if (!error && data !== null) return data as GymEventRecord[];
-    } catch (e) {}
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('event_date', { ascending: true });
+
+      if (!error && data !== null) {
+        // Normalize schema fields (supports both migration 000 and legacy migration 002)
+        const cloudEvents: GymEventRecord[] = data.map((d: any) => ({
+          id: d.id,
+          title: d.title,
+          description: d.description || null,
+          event_date: d.event_date,
+          event_time: d.event_time || '',
+          location: d.location || 'Prime Fitness Arena, Shivaji Nagar',
+          registration_count: d.registration_count ?? d.registered_count ?? 0,
+          max_capacity: d.max_capacity ?? d.max_participants ?? 30,
+          is_published: d.is_published ?? true,
+          created_at: d.created_at || new Date().toISOString(),
+        }));
+
+        // Merge any pending local records that are not yet in the cloud database
+        const cloudIds = new Set(cloudEvents.map(c => c.id));
+        const pendingLocal = localRecords.filter(
+          l => !cloudIds.has(l.id) && (l.id.startsWith('evt-local-') || l.id.startsWith('evt-'))
+        );
+
+        const combined = [...cloudEvents];
+        for (const loc of pendingLocal) {
+          if (!combined.some(c => c.title.trim().toLowerCase() === loc.title.trim().toLowerCase() && c.event_date === loc.event_date)) {
+            combined.unshift(loc);
+          }
+        }
+
+        return combined;
+      }
+
+      if (error) {
+        console.warn('Events fetch fallback to local cache:', error.message);
+      }
+    } catch (e: any) {
+      console.warn('Events fetch exception:', e);
+    }
   }
-  return getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, []);
+
+  return localRecords;
 }
 
-export async function saveEvent(event: Omit<GymEventRecord, 'id' | 'created_at'>): Promise<{ success: boolean; data: GymEventRecord; isLive: boolean; error?: string }> {
+export async function saveEvent(event: Omit<GymEventRecord, 'id' | 'created_at'>): Promise<{ success: boolean; data?: GymEventRecord; isLive: boolean; error?: string }> {
+  const localPayload: GymEventRecord = {
+    ...event,
+    id: 'evt-local-' + Date.now(),
+    created_at: new Date().toISOString(),
+  };
+
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase.from('events').insert([event]).select().single();
-      if (!error && data) {
-        const local = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, []);
-        local.unshift(data as GymEventRecord);
-        setStored(STORAGE_KEYS.EVENTS, local);
-        return { success: true, data: data as GymEventRecord, isLive: true };
+      // Omit client string ID so PostgreSQL generates genuine UUID
+      const dbPayload: any = {
+        title: event.title.trim(),
+        description: event.description ? event.description.trim() : null,
+        event_date: event.event_date,
+        event_time: event.event_time || '',
+        location: event.location || 'Prime Fitness Arena, Shivaji Nagar',
+        registration_count: Number(event.registration_count) || 0,
+        max_capacity: event.max_capacity ? Number(event.max_capacity) : 30,
+        is_published: event.is_published ?? true,
+      };
+
+      let { data, error } = await supabase
+        .from('events')
+        .insert([dbPayload])
+        .select()
+        .single();
+
+      // Fallback check: if schema uses legacy migration 002 column names
+      if (error && (error.message.includes('registration_count') || error.message.includes('max_capacity'))) {
+        const legacyPayload: any = {
+          title: event.title.trim(),
+          description: event.description ? event.description.trim() : null,
+          event_date: event.event_date,
+          event_time: event.event_time || '',
+          location: event.location || 'Prime Fitness Arena, Shivaji Nagar',
+          registered_count: Number(event.registration_count) || 0,
+          max_participants: event.max_capacity ? Number(event.max_capacity) : 30,
+          is_published: event.is_published ?? true,
+        };
+        const retry = await supabase.from('events').insert([legacyPayload]).select().single();
+        data = retry.data;
+        error = retry.error;
       }
-    } catch (e) {}
+
+      if (!error && data) {
+        const cloudRecord: GymEventRecord = {
+          id: data.id,
+          title: data.title,
+          description: data.description || null,
+          event_date: data.event_date,
+          event_time: data.event_time || '',
+          location: data.location || '',
+          registration_count: data.registration_count ?? data.registered_count ?? 0,
+          max_capacity: data.max_capacity ?? data.max_participants ?? 30,
+          is_published: data.is_published ?? true,
+          created_at: data.created_at || new Date().toISOString(),
+        };
+
+        const local = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
+        local.unshift(cloudRecord);
+        setStored(STORAGE_KEYS.EVENTS, local);
+
+        return { success: true, data: cloudRecord, isLive: true };
+      }
+
+      if (error) {
+        console.error('Supabase event insert failed:', error.message);
+        // Persist locally as fallback so user does not lose input
+        const local = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
+        local.unshift(localPayload);
+        setStored(STORAGE_KEYS.EVENTS, local);
+
+        return {
+          success: true,
+          data: localPayload,
+          isLive: false,
+          error: `Event saved locally. Database notice: ${error.message}`,
+        };
+      }
+    } catch (e: any) {
+      console.error('Supabase event insert exception:', e);
+      const local = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
+      local.unshift(localPayload);
+      setStored(STORAGE_KEYS.EVENTS, local);
+
+      return {
+        success: true,
+        data: localPayload,
+        isLive: false,
+        error: `Event saved locally. Network/Database notice: ${e.message || 'Offline mode'}`,
+      };
+    }
   }
-  const payload: GymEventRecord = { ...event, id: 'evt-' + Date.now(), created_at: new Date().toISOString() };
-  const local = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, []);
-  local.unshift(payload);
+
+  // Local storage mode when Supabase is not configured
+  const local = getStored<GymEventRecord>(STORAGE_KEYS.EVENTS, INITIAL_EVENTS);
+  local.unshift(localPayload);
   setStored(STORAGE_KEYS.EVENTS, local);
-  return { success: true, data: payload, isLive: false, error: 'Saved to local cache.' };
+  return { success: true, data: localPayload, isLive: false };
 }
 
 export async function getChallenges(): Promise<FitnessChallengeRecord[]> {
+  const localRecords = getStored<FitnessChallengeRecord>(STORAGE_KEYS.CHALLENGES, INITIAL_CHALLENGES);
+
   if (isSupabaseConfigured()) {
     try {
       const { data, error } = await supabase.from('challenges').select('*').order('start_date', { ascending: true });
-      if (!error && data !== null) return data as FitnessChallengeRecord[];
+      if (!error && data !== null) {
+        const cloudChallenges: FitnessChallengeRecord[] = data as FitnessChallengeRecord[];
+        const cloudIds = new Set(cloudChallenges.map(c => c.id));
+        const pendingLocal = localRecords.filter(l => !cloudIds.has(l.id) && l.id.startsWith('chl-'));
+        return [...cloudChallenges, ...pendingLocal];
+      }
     } catch (e) {}
   }
-  return getStored<FitnessChallengeRecord>(STORAGE_KEYS.CHALLENGES, []);
+  return localRecords;
 }
 
 export async function saveChallenge(challenge: Omit<FitnessChallengeRecord, 'id' | 'created_at'>): Promise<{ success: boolean; data: FitnessChallengeRecord; isLive: boolean; error?: string }> {
@@ -626,7 +757,7 @@ export async function saveChallenge(challenge: Omit<FitnessChallengeRecord, 'id'
     try {
       const { data, error } = await supabase.from('challenges').insert([challenge]).select().single();
       if (!error && data) {
-        const local = getStored<FitnessChallengeRecord>(STORAGE_KEYS.CHALLENGES, []);
+        const local = getStored<FitnessChallengeRecord>(STORAGE_KEYS.CHALLENGES, INITIAL_CHALLENGES);
         local.unshift(data as FitnessChallengeRecord);
         setStored(STORAGE_KEYS.CHALLENGES, local);
         return { success: true, data: data as FitnessChallengeRecord, isLive: true };
@@ -634,7 +765,7 @@ export async function saveChallenge(challenge: Omit<FitnessChallengeRecord, 'id'
     } catch (e) {}
   }
   const payload: FitnessChallengeRecord = { ...challenge, id: 'chl-' + Date.now(), created_at: new Date().toISOString() };
-  const local = getStored<FitnessChallengeRecord>(STORAGE_KEYS.CHALLENGES, []);
+  const local = getStored<FitnessChallengeRecord>(STORAGE_KEYS.CHALLENGES, INITIAL_CHALLENGES);
   local.unshift(payload);
   setStored(STORAGE_KEYS.CHALLENGES, local);
   return { success: true, data: payload, isLive: false, error: 'Saved to local cache.' };

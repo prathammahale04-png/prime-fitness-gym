@@ -1,7 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { PaymentRecord, PaymentMethod, Member } from '../../types/database.types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { PaymentRecord, PaymentMethod, Member, MembershipPackage } from '../../types/database.types';
 import { getPayments, recordPayment } from '../../services/gymPlatformService';
 import { getMembers } from '../../services/memberService';
+import { getPackages } from '../../services/packageService';
+import { InvoiceModal } from './InvoiceModal';
 import {
   CreditCard,
   Plus,
@@ -17,16 +19,18 @@ import {
   ShieldCheck,
   AlertCircle,
   FileText,
+  ExternalLink,
 } from 'lucide-react';
 
 export const BillingView: React.FC = () => {
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState<'all' | PaymentMethod>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedReceipt, setSelectedReceipt] = useState<PaymentRecord | null>(null);
+  const [selectedInvoicePayment, setSelectedInvoicePayment] = useState<PaymentRecord | null>(null);
 
   // Form states
   const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -42,18 +46,70 @@ export const BillingView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
-    const [paymentsRes, membersRes] = await Promise.all([
+    const [paymentsRes, membersRes, packagesRes] = await Promise.all([
       getPayments(),
       getMembers(),
+      getPackages(),
     ]);
     setPayments(paymentsRes);
     setMembers(membersRes.members);
+    setPackages(packagesRes.packages);
     setLoading(false);
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Persistent URL synchronization for invoice viewing and printing across page refreshes
+  const handleOpenInvoice = useCallback((payment: PaymentRecord) => {
+    setSelectedInvoicePayment(payment);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('invoice', payment.receipt_number);
+      window.history.pushState({ invoice: payment.receipt_number }, '', url.toString());
+    } catch {
+      // fallback
+    }
+  }, []);
+
+  const handleCloseInvoice = useCallback(() => {
+    setSelectedInvoicePayment(null);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('invoice');
+      window.history.pushState({}, '', url.toString());
+    } catch {
+      // fallback
+    }
+  }, []);
+
+  // Resolve persistent invoice from URL query parameter on page load and browser navigation
+  useEffect(() => {
+    const handleUrlInvoice = () => {
+      const params = new URLSearchParams(window.location.search);
+      const invoiceRef = params.get('invoice');
+      if (!invoiceRef) {
+        setSelectedInvoicePayment(null);
+        return;
+      }
+      if (payments.length > 0) {
+        const found = payments.find(
+          p => p.receipt_number.toLowerCase() === invoiceRef.toLowerCase() || p.id === invoiceRef
+        );
+        if (found) {
+          setSelectedInvoicePayment(found);
+        } else {
+          setErrorMsg(`Invoice record with reference "${invoiceRef}" could not be located in transaction history.`);
+        }
+      }
+    };
+
+    handleUrlInvoice();
+
+    window.addEventListener('popstate', handleUrlInvoice);
+    return () => window.removeEventListener('popstate', handleUrlInvoice);
+  }, [payments]);
 
   const handleOpenRecord = (member?: Member) => {
     if (member) {
@@ -117,7 +173,7 @@ export const BillingView: React.FC = () => {
         setStorageWarning(null);
       }
       setIsModalOpen(false);
-      setSelectedReceipt(res.data);
+      handleOpenInvoice(res.data);
       await loadData();
     } else {
       setErrorMsg(res.error || 'Failed to record payment.');
@@ -271,13 +327,13 @@ export const BillingView: React.FC = () => {
             <table className="w-full text-left text-xs text-neutral-300">
               <thead className="bg-[#0e1014] text-[10px] font-mono uppercase tracking-wider text-neutral-400 border-b border-neutral-800">
                 <tr>
-                  <th className="py-3 px-4">Receipt #</th>
+                  <th className="py-3 px-4">Invoice / Receipt #</th>
                   <th className="py-3 px-4">Member Name</th>
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Method</th>
                   <th className="py-3 px-4">Reference ID</th>
                   <th className="py-3 px-4">Amount</th>
-                  <th className="py-3 px-4 text-right">Receipt</th>
+                  <th className="py-3 px-4 text-right">Invoice & Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/80">
@@ -285,7 +341,15 @@ export const BillingView: React.FC = () => {
                   return (
                     <tr key={p.id} className="hover:bg-[#181a24] transition-colors">
                       <td className="py-3 px-4 font-mono text-[11px] text-[#f36b22] font-bold">
-                        {p.receipt_number}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenInvoice(p)}
+                          className="hover:underline focus:outline-hidden text-left cursor-pointer inline-flex items-center gap-1 text-[#f36b22]"
+                          title="Click to view and print official tax invoice"
+                        >
+                          <span>{p.receipt_number}</span>
+                          <ExternalLink className="w-3 h-3 opacity-60 hover:opacity-100" />
+                        </button>
                       </td>
                       <td className="py-3 px-4 font-medium text-white">
                         {p.member_name}
@@ -306,11 +370,13 @@ export const BillingView: React.FC = () => {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <button
-                          onClick={() => setSelectedReceipt(p)}
-                          className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded transition-colors cursor-pointer"
-                          title="View Digital Receipt"
+                          type="button"
+                          onClick={() => handleOpenInvoice(p)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1b1f2b] hover:bg-[#f36b22] text-neutral-200 hover:text-white border border-neutral-700/80 hover:border-[#f36b22] rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                          title="View & Print Official A4 Invoice"
                         >
-                          <FileText className="w-4 h-4" />
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>View / Print Invoice</span>
                         </button>
                       </td>
                     </tr>
@@ -477,88 +543,29 @@ export const BillingView: React.FC = () => {
         </div>
       )}
 
-      {/* Digital Receipt Modal */}
-      {selectedReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs">
-          <div className="bg-[#181a22] border border-neutral-700 rounded-xl w-full max-w-md p-6 sm:p-8 relative shadow-2xl text-neutral-100">
-            <button
-              onClick={() => setSelectedReceipt(null)}
-              className="absolute top-4 right-4 text-neutral-400 hover:text-white p-1"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {/* Receipt Header */}
-            <div className="text-center pb-5 border-b border-neutral-700 space-y-1">
-              <span className="text-[10px] font-mono text-[#f36b22] uppercase tracking-widest block font-bold">
-                OFFICIAL PAYMENT RECEIPT
-              </span>
-              <h3 className="font-headline font-black text-xl text-white tracking-wide">
-                PRIME FITNESS MH19
-              </h3>
-              <p className="text-[11px] text-neutral-400">
-                Shivaji Nagar, Jalgaon · +91 98220 12345
-              </p>
-            </div>
-
-            {/* Receipt Details */}
-            <div className="py-5 space-y-3 text-xs">
-              <div className="flex justify-between font-mono">
-                <span className="text-neutral-400">Receipt No:</span>
-                <span className="text-white font-bold">{selectedReceipt.receipt_number}</span>
-              </div>
-              <div className="flex justify-between font-mono">
-                <span className="text-neutral-400">Payment Date:</span>
-                <span className="text-white">{selectedReceipt.payment_date}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">Member:</span>
-                <span className="text-white font-bold">{selectedReceipt.member_name}</span>
-              </div>
-              <div className="flex justify-between font-mono">
-                <span className="text-neutral-400">Method:</span>
-                <span className="text-emerald-400 uppercase font-bold">{selectedReceipt.payment_method}</span>
-              </div>
-              {selectedReceipt.reference_id && (
-                <div className="flex justify-between font-mono">
-                  <span className="text-neutral-400">Reference:</span>
-                  <span className="text-neutral-300">{selectedReceipt.reference_id}</span>
-                </div>
-              )}
-              {selectedReceipt.notes && (
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Notes:</span>
-                  <span className="text-neutral-300">{selectedReceipt.notes}</span>
-                </div>
-              )}
-
-              <div className="pt-3 border-t border-neutral-700 flex justify-between items-center text-sm font-bold">
-                <span>Amount Paid:</span>
-                <span className="text-[#f36b22] text-xl font-headline font-black">
-                  ₹{selectedReceipt.amount.toLocaleString('en-IN')}
-                </span>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="pt-4 border-t border-neutral-700 flex items-center justify-between text-xs">
-              <button
-                onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#252834] hover:bg-[#2e3240] text-neutral-200 rounded-lg transition-colors cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Slip</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedReceipt(null)}
-                className="px-4 py-1.5 bg-[#f36b22] text-white font-semibold rounded-lg hover:bg-[#d95614] transition-colors cursor-pointer"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Official A4 Print-Ready Tax Invoice Modal */}
+      {selectedInvoicePayment && (
+        <InvoiceModal
+          payment={selectedInvoicePayment}
+          member={
+            members.find(
+              m => (selectedInvoicePayment.member_id && m.id === selectedInvoicePayment.member_id) ||
+                   m.full_name.trim().toLowerCase() === selectedInvoicePayment.member_name.trim().toLowerCase()
+            ) || null
+          }
+          packageDetails={(() => {
+            const mem = members.find(
+              m => (selectedInvoicePayment.member_id && m.id === selectedInvoicePayment.member_id) ||
+                   m.full_name.trim().toLowerCase() === selectedInvoicePayment.member_name.trim().toLowerCase()
+            );
+            if (!mem) return null;
+            return packages.find(
+              pkg => (mem.package_id && pkg.id === mem.package_id) ||
+                     (mem.package_name && pkg.name.trim().toLowerCase() === mem.package_name.trim().toLowerCase())
+            ) || null;
+          })()}
+          onClose={handleCloseInvoice}
+        />
       )}
     </div>
   );

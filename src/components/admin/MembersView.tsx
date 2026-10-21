@@ -1,8 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Member, MembershipPackage } from '../../types/database.types';
-import { getMembers, addMember, renewMember, toggleMemberDeactivate, calculateExpiryDate } from '../../services/memberService';
+import { getMembers, addMember, renewMember, toggleMemberDeactivate, calculateExpiryDate, updateMemberPhone } from '../../services/memberService';
 import { getPackages } from '../../services/packageService';
 import { recordPayment } from '../../services/gymPlatformService';
+import { WhatsAppReminderModal } from './WhatsAppReminderModal';
+import {
+  normalizeIndianPhoneNumber,
+  getDaysDifference,
+  getIndiaTodayDate,
+  generateReminderMessage,
+  ReminderMemberItem,
+} from '../../utils/reminderUtils';
 import {
   Users,
   Search,
@@ -19,6 +27,7 @@ import {
   Clock,
   Layers,
   ArrowRight,
+  MessageCircle,
 } from 'lucide-react';
 
 export const MembersView: React.FC = () => {
@@ -32,6 +41,7 @@ export const MembersView: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isRenewOpen, setIsRenewOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [reminderModalItem, setReminderModalItem] = useState<ReminderMemberItem | null>(null);
 
   // Add Member Form
   const [fullName, setFullName] = useState('');
@@ -219,6 +229,28 @@ export const MembersView: React.FC = () => {
   const handleToggleDeactivate = async (m: Member) => {
     await toggleMemberDeactivate(m.id, m.status);
     await loadData();
+  };
+
+  const handleOpenWhatsAppReminder = (m: Member) => {
+    const today = getIndiaTodayDate();
+    const diff = getDaysDifference(m.expiry_date, today);
+    const cat = diff === 0 ? 'today' : diff > 0 && diff <= 7 ? 'soon' : diff < 0 ? 'expired' : 'soon';
+    const label =
+      diff === 0
+        ? 'Expires Today'
+        : diff > 0
+        ? `Expires in ${diff} days`
+        : `Expired ${Math.abs(diff)} days ago`;
+    const validation = normalizeIndianPhoneNumber(m.phone);
+    const msg = generateReminderMessage(m, cat);
+    setReminderModalItem({
+      member: m,
+      category: cat,
+      daysDiff: diff,
+      daysLabel: label,
+      phoneValidation: validation,
+      defaultMessage: msg,
+    });
   };
 
   // Metrics summary
@@ -414,6 +446,16 @@ export const MembersView: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 text-right space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenWhatsAppReminder(m)}
+                          className="px-2 py-1 bg-[#25d366]/10 hover:bg-[#25d366]/20 text-[#25d366] text-[10px] font-semibold border border-[#25d366]/30 rounded transition-colors cursor-pointer inline-flex items-center gap-1"
+                          title="Send WhatsApp Expiry Reminder"
+                        >
+                          <MessageCircle className="w-3 h-3" />
+                          <span>WhatsApp</span>
+                        </button>
+
                         <button
                           onClick={() => handleOpenRenew(m)}
                           className="px-2.5 py-1 bg-[#1e232d] hover:bg-[#272d3b] text-neutral-200 hover:text-white text-[10px] font-headline font-bold uppercase tracking-wider border border-neutral-700 transition-colors cursor-pointer"
@@ -740,6 +782,18 @@ export const MembersView: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp Expiry Reminder Modal */}
+      {reminderModalItem && (
+        <WhatsAppReminderModal
+          item={reminderModalItem}
+          onClose={() => setReminderModalItem(null)}
+          onPhoneUpdated={async (memberId, newPhone) => {
+            await updateMemberPhone(memberId, newPhone);
+            await loadData();
+          }}
+        />
       )}
     </div>
   );

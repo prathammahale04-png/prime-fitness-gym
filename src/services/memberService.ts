@@ -4,13 +4,83 @@ import { Member, MemberInput, MembershipPackage, MemberStatus } from '../types/d
 // Fallback in-memory/localStorage cache for offline or pre-migration testing
 const LOCAL_STORAGE_KEY = 'primefitness_mh19_members_cache';
 
+const INITIAL_MEMBERS: Member[] = [
+  {
+    id: 'mem-001',
+    member_code: 'PF-1001',
+    full_name: 'Rahul Patil',
+    phone: '9822012345',
+    email: 'rahul.patil@example.com',
+    gender: 'male',
+    date_of_birth: '1996-05-12',
+    address: 'Near Old B.J. Market, Shivaji Nagar, Jalgaon',
+    emergency_contact: '9822099999',
+    package_id: 'default-pkg-2',
+    package_name: '3 MONTHS INTENSIVE',
+    joined_date: '2026-07-25',
+    start_date: '2026-07-25',
+    expiry_date: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
+    status: 'active',
+    amount_paid: 3500,
+    balance_due: 0,
+    notes: 'Regular morning strength slot athlete',
+    created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'mem-002',
+    member_code: 'PF-1002',
+    full_name: 'Pooja Kulkarni',
+    phone: '9422234567',
+    email: 'pooja.k@example.com',
+    gender: 'female',
+    date_of_birth: '1998-11-20',
+    address: 'Prabhat Chowk, Jalgaon',
+    emergency_contact: '9422200000',
+    package_id: 'default-pkg-1',
+    package_name: '1 MONTH STANDARD',
+    joined_date: '2026-09-21',
+    start_date: '2026-09-21',
+    expiry_date: new Date().toISOString().split('T')[0],
+    status: 'active',
+    amount_paid: 1500,
+    balance_due: 0,
+    notes: 'Cardio & functional mobility training',
+    created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'mem-003',
+    member_code: 'PF-1003',
+    full_name: 'Vikram Joshi',
+    phone: '9822567890',
+    email: 'vikram.j@example.com',
+    gender: 'male',
+    date_of_birth: '1992-03-15',
+    address: 'Ring Road, Jalgaon',
+    emergency_contact: '9822511111',
+    package_id: 'default-pkg-3',
+    package_name: '6 MONTHS ATHLETIC',
+    joined_date: '2026-04-15',
+    start_date: '2026-04-15',
+    expiry_date: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
+    status: 'active',
+    amount_paid: 6000,
+    balance_due: 0,
+    notes: 'HYROX conditioning athlete',
+    created_at: new Date(Date.now() - 180 * 86400000).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+];
+
 function getLocalMembers(): Member[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
+    if (!raw) return INITIAL_MEMBERS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MEMBERS;
   } catch {
-    return [];
+    return INITIAL_MEMBERS;
   }
 }
 
@@ -248,3 +318,44 @@ export async function toggleMemberDeactivate(
     return { success: false, error: err.message };
   }
 }
+
+export async function updateMemberPhone(
+  memberId: string,
+  newPhone: string
+): Promise<{ success: boolean; error?: string }> {
+  const trimmedPhone = newPhone.trim();
+
+  if (!isSupabaseConfigured()) {
+    const list = getLocalMembers();
+    const idx = list.findIndex(m => m.id === memberId);
+    if (idx !== -1) {
+      list[idx].phone = trimmedPhone;
+      list[idx].updated_at = new Date().toISOString();
+      saveLocalMembers(list);
+    }
+    return { success: true };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('members')
+      .update({ phone: trimmedPhone, updated_at: new Date().toISOString() })
+      .eq('id', memberId);
+
+    if (error) {
+      // Fallback to local cache
+      const list = getLocalMembers();
+      const idx = list.findIndex(m => m.id === memberId);
+      if (idx !== -1) {
+        list[idx].phone = trimmedPhone;
+        saveLocalMembers(list);
+      }
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+

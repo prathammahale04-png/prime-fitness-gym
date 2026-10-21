@@ -629,8 +629,26 @@ CREATE TABLE IF NOT EXISTS public.events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS max_capacity INTEGER DEFAULT 30;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS registration_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT true;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'max_participants'
+  ) THEN
+    UPDATE public.events SET max_capacity = max_participants WHERE max_capacity IS NULL;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'registered_count'
+  ) THEN
+    UPDATE public.events SET registration_count = registered_count WHERE registration_count = 0;
+  END IF;
+END $$;
 
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 

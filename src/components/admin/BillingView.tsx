@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { PaymentRecord, PaymentMethod, Member, MembershipPackage } from '../../types/database.types';
 import { getPayments, recordPayment } from '../../services/gymPlatformService';
 import { getMembers } from '../../services/memberService';
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 
 export const BillingView: React.FC = () => {
+  const { session, loading: authLoading } = useAuth();
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
@@ -58,8 +60,10 @@ export const BillingView: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!authLoading) {
+      loadData();
+    }
+  }, [authLoading, session?.user?.id]);
 
   // Persistent URL synchronization for invoice viewing and printing across page refreshes
   const handleOpenInvoice = useCallback((payment: PaymentRecord) => {

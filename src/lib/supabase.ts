@@ -95,8 +95,8 @@ export async function testSupabaseConnection(): Promise<{
   const start = performance.now();
   try {
     const client = getSupabase();
-    // 1. Test auth endpoint availability
-    const { error: authErr } = await client.auth.getSession();
+    // 1. Test auth endpoint availability & active session
+    const { data: sessionData, error: authErr } = await client.auth.getSession();
     const latency = Math.round(performance.now() - start);
 
     if (authErr) {
@@ -108,8 +108,9 @@ export async function testSupabaseConnection(): Promise<{
       };
     }
 
-    // 2. Test if core platform tables exist in the schema
-    const { error: tableErr } = await client.from('members').select('id', { head: true });
+    // 2. Test if core platform tables exist in schema using public packages table
+    // (packages table is intentionally readable by anon and contains no private member data)
+    const { error: tableErr } = await client.from('packages').select('id', { head: true });
     const tablesMigrated = !tableErr || tableErr.code !== 'PGRST205';
 
     if (!tablesMigrated) {
@@ -121,10 +122,14 @@ export async function testSupabaseConnection(): Promise<{
       };
     }
 
+    const hasActiveSession = Boolean(sessionData?.session?.user);
+
     return {
       connected: true,
       tablesMigrated: true,
-      message: `Successfully connected to Supabase (${latency}ms) with all tables verified.`,
+      message: hasActiveSession
+        ? `Successfully connected to Supabase (${latency}ms) with active authenticated session.`
+        : `Connected to Supabase (${latency}ms). Public schema verified; sign in to access live member data.`,
       latencyMs: latency,
     };
   } catch (err: any) {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { UserProfile, AppRole } from '../types/database.types';
+import { clearMemberCache } from '../services/memberService';
 
 interface AuthContextType {
   user: User | null;
@@ -119,8 +120,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // 2. Auth state subscription
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, currentSession) => {
+      async (event, currentSession) => {
         if (!isMounted) return;
+
+        if (event === 'SIGNED_OUT') {
+          clearMemberCache();
+        }
 
         setSession(currentSession);
         if (currentSession?.user) {
@@ -185,6 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Sign out warning:', err);
     } finally {
+      clearMemberCache();
       setUser(null);
       setSession(null);
       setProfile(null);

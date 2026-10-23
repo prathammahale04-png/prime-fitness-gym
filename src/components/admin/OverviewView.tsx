@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { OverviewStats, getOverviewStats } from '../../services/gymPlatformService';
 import { testSupabaseConnection } from '../../lib/supabase';
 import { PRIME_GYM_DATA } from '../../data/primeGymData';
@@ -29,6 +30,7 @@ interface OverviewViewProps {
 }
 
 export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection }) => {
+  const { session, loading: authLoading } = useAuth();
   const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'year'>('month');
   const [stats, setStats] = useState<OverviewStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,8 +49,10 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
   };
 
   useEffect(() => {
-    loadData();
-  }, [period]);
+    if (!authLoading) {
+      loadData();
+    }
+  }, [authLoading, session?.user?.id, period]);
 
   const handleSendReminder = (m: any) => {
     const validation = normalizeIndianPhoneNumber(m.phone);

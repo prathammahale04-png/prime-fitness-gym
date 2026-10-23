@@ -249,6 +249,9 @@ function setStored<T>(key: string, data: T[]): void {
 async function applyPaymentToMember(memberId: string, amount: number) {
   if (isSupabaseConfigured()) {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session?.user) return;
+
       const { data: m } = await supabase
         .from('members')
         .select('amount_paid, balance_due')
@@ -296,6 +299,11 @@ async function applyPaymentToMember(memberId: string, amount: number) {
 export async function getPayments(): Promise<PaymentRecord[]> {
   if (isSupabaseConfigured()) {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session?.user) {
+        return getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
+      }
+
       const { data, error } = await supabase
         .from('payments')
         .select('*')
@@ -306,7 +314,7 @@ export async function getPayments(): Promise<PaymentRecord[]> {
         return data as PaymentRecord[];
       }
       if (error) {
-        console.warn('Payments fetch fallback to local cache (migration pending):', error.message);
+        console.warn('Payments fetch fallback to local cache:', error.message);
       }
     } catch (e) {
       // fallback
@@ -337,6 +345,15 @@ export async function recordPayment(payment: {
 
   if (isSupabaseConfigured()) {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session?.user) {
+        // Not authenticated, save to local storage cache without querying private table
+        const local = getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
+        local.unshift(localPayload);
+        setStored(STORAGE_KEYS.PAYMENTS, local);
+        return { success: true, data: localPayload, isLive: false, error: 'Saved locally. Sign in to record payments in Supabase.' };
+      }
+
       // Omit client-generated ID so PostgreSQL generates genuine UUID
       const dbInsertPayload = {
         receipt_number: receiptNumber,

@@ -73,14 +73,25 @@ const INITIAL_MEMBERS: Member[] = [
   },
 ];
 
+export function clearMemberCache(): void {
+  try {
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  } catch (err) {
+    console.warn('Failed to clear member cache:', err);
+  }
+}
+
 function getLocalMembers(): Member[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return INITIAL_MEMBERS;
+    if (!raw) {
+      // In offline mode without Supabase, provide initial demo data; when Supabase is configured, empty cache on logout
+      return isSupabaseConfigured() ? [] : INITIAL_MEMBERS;
+    }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MEMBERS;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : (isSupabaseConfigured() ? [] : INITIAL_MEMBERS);
   } catch {
-    return INITIAL_MEMBERS;
+    return isSupabaseConfigured() ? [] : INITIAL_MEMBERS;
   }
 }
 
@@ -111,16 +122,49 @@ export async function getMembers(filters?: {
   search?: string;
   status?: string;
 }): Promise<{ members: Member[]; isLive: boolean; error?: string }> {
-  if (!isSupabaseConfigured()) {
-    let list = getLocalMembers();
+  const applyFilters = (list: Member[]) => {
+    let res = list;
     if (filters?.search) {
-      const q = filters.search.toLowerCase();
-      list = list.filter(m => m.full_name.toLowerCase().includes(q) || m.phone.includes(q) || m.member_code.toLowerCase().includes(q));
+      const q = filters.search.toLowerCase().trim();
+      res = res.filter(m =>
+        m.full_name.toLowerCase().includes(q) ||
+        m.phone.includes(q) ||
+        m.member_code.toLowerCase().includes(q)
+      );
     }
     if (filters?.status && filters.status !== 'all') {
-      list = list.filter(m => m.status === filters.status);
+      res = res.filter(m => m.status === filters.status);
     }
-    return { members: list, isLive: false };
+    return res;
+  };
+
+  // If Supabase is not configured, operate purely in local cache mode
+  if (!isSupabaseConfigured()) {
+    return { members: applyFilters(getLocalMembers()), isLive: false };
+  }
+
+  // 1. Check for active Supabase Auth session before querying the private members table
+  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+  const session = sessionData?.session;
+
+  if (sessionErr || !session?.user) {
+    // Unauthenticated request: do NOT dispatch anon query to private table
+    return {
+      members: applyFilters(getLocalMembers()),
+      isLive: false,
+      error: sessionErr
+        ? `Authentication session error: ${sessionErr.message}`
+        : 'Not authenticated. Showing cached records. Sign in as Admin to sync live data.',
+    };
+  }
+
+  // 2. Check for expired session token
+  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+    return {
+      members: applyFilters(getLocalMembers()),
+      isLive: false,
+      error: 'Authentication session expired. Please sign in again to sync live member data.',
+    };
   }
 
   try {
@@ -143,7 +187,13 @@ export async function getMembers(filters?: {
     if (error) {
       console.warn('Error fetching members from DB, falling back to local cache:', error.message);
       let local = getLocalMembers();
-      return { members: local, isLive: false, error: error.message };
+      return {
+        members: applyFilters(local),
+        isLive: false,
+        error: error.code === '42501'
+          ? 'Database permission error: authenticated session not recognized by database.'
+          : error.message,
+      };
     }
 
     // Update member statuses automatically based on expiry
@@ -159,9 +209,16 @@ export async function getMembers(filters?: {
       return m;
     });
 
-    return { members: updatedMembers, isLive: true };
+    // Update local cache with freshly fetched verified live records
+    saveLocalMembers(updatedMembers);
+
+    return { members: applyFilters(updatedMembers), isLive: true };
   } catch (err: any) {
-    return { members: getLocalMembers(), isLive: false, error: err.message };
+    return {
+      members: applyFilters(getLocalMembers()),
+      isLive: false,
+      error: err?.message || 'Unexpected network error fetching members.',
+    };
   }
 }
 
@@ -209,6 +266,22 @@ export async function addMember(
     return { success: true, data: localMember };
   }
 
+  // Check auth session before inserting into private table
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData?.session;
+  if (!session?.user) {
+    return {
+      success: false,
+      error: 'Authentication required. Please sign in as Admin to add members to the database.',
+    };
+  }
+  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+    return {
+      success: false,
+      error: 'Authentication session expired. Please sign in again.',
+    };
+  }
+
   try {
     const { data, error } = await supabase
       .from('members')
@@ -217,21 +290,15 @@ export async function addMember(
       .single();
 
     if (error) {
-      // If table doesn't exist yet, save locally
-      const localMember: Member = {
-        ...memberPayload,
-        id: 'local-' + Date.now(),
-        member_code: 'PF-' + Math.floor(1000 + Math.random() * 9000),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      const current = getLocalMembers();
-      current.unshift(localMember);
-      saveLocalMembers(current);
-      return { success: true, data: localMember, error: 'Saved locally. Run migration 002 in Supabase to sync to database.' };
+      return { success: false, error: error.message };
     }
 
-    return { success: true, data: data as Member };
+    const newMember = data as Member;
+    const current = getLocalMembers();
+    current.unshift(newMember);
+    saveLocalMembers(current);
+
+    return { success: true, data: newMember };
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to save member.' };
   }
@@ -268,6 +335,22 @@ export async function renewMember(
     return { success: true };
   }
 
+  // Check auth session before updating private table
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData?.session;
+  if (!session?.user) {
+    return {
+      success: false,
+      error: 'Authentication required. Please sign in as Admin to renew memberships.',
+    };
+  }
+  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+    return {
+      success: false,
+      error: 'Authentication session expired. Please sign in again.',
+    };
+  }
+
   try {
     const { error } = await supabase
       .from('members')
@@ -275,13 +358,14 @@ export async function renewMember(
       .eq('id', memberId);
 
     if (error) {
-      const list = getLocalMembers();
-      const idx = list.findIndex(m => m.id === memberId);
-      if (idx !== -1) {
-        list[idx] = { ...list[idx], ...updates };
-        saveLocalMembers(list);
-      }
-      return { success: true, error: 'Updated locally.' };
+      return { success: false, error: error.message };
+    }
+
+    const list = getLocalMembers();
+    const idx = list.findIndex(m => m.id === memberId);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...updates };
+      saveLocalMembers(list);
     }
 
     return { success: true };
@@ -306,6 +390,22 @@ export async function toggleMemberDeactivate(
     return { success: true };
   }
 
+  // Check auth session before updating private table
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData?.session;
+  if (!session?.user) {
+    return {
+      success: false,
+      error: 'Authentication required. Please sign in as Admin to change member status.',
+    };
+  }
+  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+    return {
+      success: false,
+      error: 'Authentication session expired. Please sign in again.',
+    };
+  }
+
   try {
     const { error } = await supabase
       .from('members')
@@ -313,6 +413,14 @@ export async function toggleMemberDeactivate(
       .eq('id', memberId);
 
     if (error) return { success: false, error: error.message };
+
+    const list = getLocalMembers();
+    const idx = list.findIndex(m => m.id === memberId);
+    if (idx !== -1) {
+      list[idx].status = newStatus;
+      saveLocalMembers(list);
+    }
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -336,6 +444,23 @@ export async function updateMemberPhone(
     return { success: true };
   }
 
+  // Check auth session before attempting update on private members table
+  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+  const session = sessionData?.session;
+  if (sessionErr || !session?.user) {
+    return {
+      success: false,
+      error: 'Authentication required. Please sign in to update member phone numbers in the database.',
+    };
+  }
+
+  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+    return {
+      success: false,
+      error: 'Authentication session expired. Please log in again to update member phone numbers.',
+    };
+  }
+
   try {
     const { error } = await supabase
       .from('members')
@@ -343,14 +468,15 @@ export async function updateMemberPhone(
       .eq('id', memberId);
 
     if (error) {
-      // Fallback to local cache
-      const list = getLocalMembers();
-      const idx = list.findIndex(m => m.id === memberId);
-      if (idx !== -1) {
-        list[idx].phone = trimmedPhone;
-        saveLocalMembers(list);
-      }
       return { success: false, error: error.message };
+    }
+
+    const list = getLocalMembers();
+    const idx = list.findIndex(m => m.id === memberId);
+    if (idx !== -1) {
+      list[idx].phone = trimmedPhone;
+      list[idx].updated_at = new Date().toISOString();
+      saveLocalMembers(list);
     }
 
     return { success: true };

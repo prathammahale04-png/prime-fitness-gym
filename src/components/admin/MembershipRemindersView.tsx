@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { Member, AdminSection } from '../../types/database.types';
 import { getMembers, updateMemberPhone } from '../../services/memberService';
 import {
@@ -34,6 +35,7 @@ type TabType = 'all' | 'today' | 'soon' | 'expired';
 export const MembershipRemindersView: React.FC<MembershipRemindersViewProps> = ({
   onNavigateSection,
 }) => {
+  const { session, loading: authLoading } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -77,9 +79,12 @@ export const MembershipRemindersView: React.FC<MembershipRemindersViewProps> = (
     }
   }, []);
 
+  // Wait for authentication session to initialize before querying member records
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (!authLoading) {
+      loadData();
+    }
+  }, [authLoading, session?.user?.id, loadData]);
 
   // Process and categorize reminder items using real Supabase members
   const { items: allReminderItems, counts } = useMemo(() => {
@@ -134,6 +139,22 @@ export const MembershipRemindersView: React.FC<MembershipRemindersViewProps> = (
 
         {/* Header Right Actions */}
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Data Source Mode Pill */}
+          <div
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono border ${
+              isLive
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400'
+                : 'bg-amber-950/40 border-amber-800/60 text-amber-400'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+            <span>{isLive ? 'Live Supabase' : 'Offline Cache'}</span>
+          </div>
+
           {/* India Local Date Pill */}
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-[#14161d] border border-neutral-800 rounded-lg text-xs font-mono text-neutral-300">
             <Calendar className="w-3.5 h-3.5 text-[#f36b22]" />
@@ -155,27 +176,23 @@ export const MembershipRemindersView: React.FC<MembershipRemindersViewProps> = (
 
       {/* Database Warning / Error State */}
       {errorMsg && (
-        <div className="p-4 bg-rose-950/30 border border-rose-800/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-rose-300">
+        <div className={`p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs border ${
+          isLive ? 'bg-amber-950/30 border-amber-800/60 text-amber-300' : 'bg-neutral-900 border-neutral-800 text-neutral-300'
+        }`}>
           <div className="flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              {errorMsg.toLowerCase().includes('permission denied') ? (
-                <div>
-                  <strong className="text-white block font-headline uppercase tracking-wider text-[11px] mb-0.5">
-                    Supabase Table Privilege Notice
-                  </strong>
-                  <p className="text-rose-200/90 leading-relaxed">
-                    The Supabase database role <code className="bg-rose-950/80 px-1 py-0.5 rounded text-white font-mono text-[10px]">authenticated</code> does not have SQL privileges granted on <code className="bg-rose-950/80 px-1 py-0.5 rounded text-white font-mono text-[10px]">public.members</code>. Please execute <code className="bg-rose-950/80 px-1 py-0.5 rounded text-white font-mono text-[10px]">20261021_fix_members_table_permissions.sql</code> in your Supabase SQL Editor.
-                  </p>
-                </div>
-              ) : (
-                <span>{errorMsg}</span>
-              )}
+              <strong className="text-white block font-headline uppercase tracking-wider text-[11px] mb-0.5">
+                {isLive ? 'Sync Notice' : 'Data Source Notice'}
+              </strong>
+              <p className="text-neutral-300 leading-relaxed">
+                {errorMsg}
+              </p>
             </div>
           </div>
           <button
             onClick={loadData}
-            className="px-3 py-1.5 bg-rose-900/50 hover:bg-rose-900/80 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
+            className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
           >
             Retry Sync
           </button>

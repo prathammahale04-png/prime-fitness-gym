@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { Member, CheckInRecord } from '../../types/database.types';
 import { getMembers } from '../../services/memberService';
 import { getCheckIns, recordCheckIn } from '../../services/gymPlatformService';
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 
 export const CheckInView: React.FC = () => {
+  const { session, loading: authLoading } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [checkins, setCheckins] = useState<CheckInRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,8 +39,10 @@ export const CheckInView: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (!authLoading) {
+      loadData();
+    }
+  }, [authLoading, session?.user?.id]);
 
   // Search logic for instant auto-complete
   const searchResults = useMemo(() => {

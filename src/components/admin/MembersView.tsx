@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { Member, MembershipPackage } from '../../types/database.types';
 import { getMembers, addMember, renewMember, toggleMemberDeactivate, calculateExpiryDate, updateMemberPhone } from '../../services/memberService';
 import { getPackages } from '../../services/packageService';
@@ -31,9 +32,11 @@ import {
 } from 'lucide-react';
 
 export const MembersView: React.FC = () => {
+  const { session, loading: authLoading } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'inactive'>('all');
 
@@ -68,6 +71,7 @@ export const MembersView: React.FC = () => {
       getPackages(),
     ]);
     setMembers(membersRes.members);
+    setIsLive(membersRes.isLive);
     setPackages(pkgRes.packages.filter(p => p.is_active));
     if (pkgRes.packages.length > 0 && !selectedPkgId) {
       setSelectedPkgId(pkgRes.packages[0].id);
@@ -77,8 +81,10 @@ export const MembersView: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, [statusFilter]);
+    if (!authLoading) {
+      loadData();
+    }
+  }, [authLoading, session?.user?.id, statusFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,13 +285,41 @@ export const MembersView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-lg shadow-[#f36b22]/20 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Member</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+          {/* Data Source Mode Pill */}
+          <div
+            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono border ${
+              isLive
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400'
+                : 'bg-amber-950/40 border-amber-800/60 text-amber-400'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+            <span>{isLive ? 'Live Supabase' : 'Offline Cache'}</span>
+          </div>
+
+          <button
+            onClick={() => loadData()}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#14161d] hover:bg-[#1a1d28] border border-neutral-800 rounded-lg text-xs text-neutral-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh members"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#f36b22]' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+
+          <button
+            onClick={handleOpenAdd}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-lg shadow-[#f36b22]/20"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Member</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Summary Bar */}

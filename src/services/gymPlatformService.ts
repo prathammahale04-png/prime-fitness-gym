@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import {
   PaymentRecord,
   CheckInRecord,
@@ -501,29 +501,66 @@ export async function recordCheckIn(
 /* =========================================================================
    ENQUIRIES / LEADS
 ========================================================================= */
-export async function getEnquiries(): Promise<EnquiryRecord[]> {
+export type GetEnquiriesResult = EnquiryRecord[] & {
+  enquiries: EnquiryRecord[];
+  isLive: boolean;
+  error?: string;
+};
+
+export async function getEnquiries(sessionOverride?: any): Promise<GetEnquiriesResult> {
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+
+      // If user is authenticated, query via getAuthenticatedClient to respect staff RLS
+      const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
+
+      const { data, error } = await client
         .from('enquiries')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (!error && data !== null) {
-        return data as EnquiryRecord[];
+        const records = data as EnquiryRecord[];
+        return Object.assign([...records], {
+          enquiries: records,
+          isLive: true,
+        }) as GetEnquiriesResult;
       }
       if (error) {
         console.warn('Enquiries fetch fallback to local cache:', error.message);
+        const cached = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
+        return Object.assign([...cached], {
+          enquiries: cached,
+          isLive: false,
+          error: error.message,
+        }) as GetEnquiriesResult;
       }
-    } catch (e) {
-      // fallback
+    } catch (e: any) {
+      console.warn('Enquiries fetch exception:', e);
+      const cached = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
+      return Object.assign([...cached], {
+        enquiries: cached,
+        isLive: false,
+        error: e?.message || 'Error fetching enquiries',
+      }) as GetEnquiriesResult;
     }
   }
-  return getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
+
+  const cached = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
+  return Object.assign([...cached], {
+    enquiries: cached,
+    isLive: false,
+  }) as GetEnquiriesResult;
 }
 
 export async function addEnquiry(
-  enquiry: Omit<EnquiryRecord, 'id' | 'created_at'>
+  enquiry: Omit<EnquiryRecord, 'id' | 'created_at'>,
+  sessionOverride?: any
 ): Promise<{ success: boolean; data?: EnquiryRecord; isLive: boolean; error?: string }> {
   const localPayload: EnquiryRecord = {
     ...enquiry,
@@ -533,34 +570,70 @@ export async function addEnquiry(
 
   if (isSupabaseConfigured()) {
     try {
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+
       const dbInsertPayload = {
-        full_name: enquiry.full_name,
-        phone: enquiry.phone,
-        email: enquiry.email || null,
+        full_name: enquiry.full_name.trim(),
+        phone: enquiry.phone.trim(),
+        email: enquiry.email ? enquiry.email.trim() : null,
         source: enquiry.source || 'website',
         interested_package: enquiry.interested_package || null,
         status: enquiry.status || 'new',
-        notes: enquiry.notes || null,
+        notes: enquiry.notes ? enquiry.notes.trim() : null,
         follow_up_date: enquiry.follow_up_date || null,
       };
 
-      const { data, error } = await supabase
-        .from('enquiries')
-        .insert([dbInsertPayload])
-        .select()
-        .single();
+      if (session?.access_token) {
+        // Authenticated user (staff/owner) has SELECT privilege, can return data
+        const client = getAuthenticatedClient(session.access_token);
+        const { data, error } = await client
+          .from('enquiries')
+          .insert([dbInsertPayload])
+          .select()
+          .maybeSingle();
 
-      if (!error && data) {
-        const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
-        local.unshift(data as EnquiryRecord);
-        setStored(STORAGE_KEYS.ENQUIRIES, local);
-        return { success: true, data: data as EnquiryRecord, isLive: true };
+        if (!error && data) {
+          const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
+          local.unshift(data as EnquiryRecord);
+          setStored(STORAGE_KEYS.ENQUIRIES, local);
+          return { success: true, data: data as EnquiryRecord, isLive: true };
+        }
+        if (error) {
+          console.error('Authenticated enquiry insert error:', error);
+          return { success: false, isLive: false, error: error.message };
+        }
+      } else {
+        // Public website visitor (anon role):
+        // PostgreSQL schema grants INSERT to anon, but intentionally restricts SELECT for privacy.
+        // DO NOT append .select() because selecting newly inserted rows fails with 42501 for anon.
+        const { error, status } = await supabase
+          .from('enquiries')
+          .insert([dbInsertPayload]);
+
+        if (!error && (status === 201 || (status >= 200 && status < 300))) {
+          // Keep local cache synced for instant optimistic feedback
+          const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
+          local.unshift(localPayload);
+          setStored(STORAGE_KEYS.ENQUIRIES, local);
+          return { success: true, data: localPayload, isLive: true };
+        }
+
+        if (error) {
+          console.error('Public anonymous enquiry insert failed:', error);
+          return { success: false, isLive: false, error: error.message };
+        }
       }
-    } catch (e) {
-      // fallback
+    } catch (e: any) {
+      console.error('Exception during enquiry submission:', e);
+      return { success: false, isLive: false, error: e?.message || 'Network error submitting registration.' };
     }
   }
 
+  // Fallback for offline environments without Supabase configured
   const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
   local.unshift(localPayload);
   setStored(STORAGE_KEYS.ENQUIRIES, local);
@@ -568,15 +641,16 @@ export async function addEnquiry(
     success: true,
     data: localPayload,
     isLive: false,
-    error: 'Enquiry saved locally. Run migration 000 in Supabase to sync to database.',
+    error: 'Enquiry saved locally (Supabase is not configured in this environment).',
   };
 }
 
 export async function updateEnquiryStatus(
   id: string,
   status: 'new' | 'contacted' | 'converted' | 'closed',
-  notes?: string
-): Promise<{ success: boolean }> {
+  notes?: string,
+  sessionOverride?: any
+): Promise<{ success: boolean; error?: string }> {
   const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
   const idx = local.findIndex(e => e.id === id);
   if (idx !== -1) {
@@ -587,9 +661,24 @@ export async function updateEnquiryStatus(
 
   if (isSupabaseConfigured()) {
     try {
-      await supabase.from('enquiries').update({ status, ...(notes ? { notes } : {}) }).eq('id', id);
-    } catch (e) {
-      // fallback
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+      const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
+      const { error } = await client
+        .from('enquiries')
+        .update({ status, ...(notes ? { notes } : {}), updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) {
+        console.warn('Update enquiry status error:', error.message);
+        return { success: false, error: error.message };
+      }
+    } catch (e: any) {
+      console.warn('Update enquiry status exception:', e);
+      return { success: false, error: e?.message };
     }
   }
 

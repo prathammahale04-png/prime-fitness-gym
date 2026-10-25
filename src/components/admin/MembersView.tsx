@@ -32,7 +32,23 @@ import {
   MessageCircle,
 } from 'lucide-react';
 
-export const MembersView: React.FC = () => {
+export interface InitialMemberPrefill {
+  fullName?: string;
+  phone?: string;
+  email?: string | null;
+  packageName?: string | null;
+  notes?: string | null;
+}
+
+interface MembersViewProps {
+  initialMemberData?: InitialMemberPrefill | null;
+  onClearInitialData?: () => void;
+}
+
+export const MembersView: React.FC<MembersViewProps> = ({
+  initialMemberData,
+  onClearInitialData,
+}) => {
   const { session, loading: authLoading } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
@@ -116,6 +132,28 @@ export const MembersView: React.FC = () => {
       loadData();
     }
   }, [authLoading, session?.user?.id, session?.access_token, statusFilter]);
+
+  // Handle prefilling from Enquiries "Convert" action
+  useEffect(() => {
+    if (initialMemberData) {
+      if (initialMemberData.fullName) setFullName(initialMemberData.fullName);
+      if (initialMemberData.phone) setPhone(initialMemberData.phone);
+      if (initialMemberData.email) setEmail(initialMemberData.email);
+      if (initialMemberData.notes) setNotes(initialMemberData.notes);
+      if (initialMemberData.packageName && packages.length > 0) {
+        const pkgMatch = packages.find(p =>
+          initialMemberData.packageName!.toLowerCase().includes(p.name.toLowerCase()) ||
+          p.name.toLowerCase().includes(initialMemberData.packageName!.toLowerCase())
+        );
+        if (pkgMatch) {
+          setSelectedPkgId(pkgMatch.id);
+          setAmountPaid(pkgMatch.price);
+        }
+      }
+      setIsAddOpen(true);
+      if (onClearInitialData) onClearInitialData();
+    }
+  }, [initialMemberData, packages, onClearInitialData]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

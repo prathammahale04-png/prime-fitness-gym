@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { EnquiryRecord, EnquiryStatus } from '../../types/database.types';
 import { getEnquiries, addEnquiry, updateEnquiryStatus } from '../../services/gymPlatformService';
 import {
@@ -13,18 +14,33 @@ import {
   ArrowRight,
   ExternalLink,
   UserCheck,
+  RefreshCw,
+  Database,
+  AlertCircle,
 } from 'lucide-react';
 
+export interface LeadConvertData {
+  fullName: string;
+  phone: string;
+  email?: string | null;
+  packageName?: string | null;
+  notes?: string | null;
+}
+
 interface EnquiriesViewProps {
-  onNavigateToMembers?: () => void;
+  onNavigateToMembers?: (leadData?: LeadConvertData) => void;
 }
 
 export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMembers }) => {
+  const { session } = useAuth();
   const [enquiries, setEnquiries] = useState<EnquiryRecord[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | EnquiryStatus>('all');
+  const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Form states
+  // Form states for manual walk-in lead creation
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -32,102 +48,192 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
   const [plan, setPlan] = useState('3 MONTHS INTENSIVE');
   const [notes, setNotes] = useState('');
   const [followUpDate, setFollowUpDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
 
   const loadData = async () => {
-    const data = await getEnquiries();
-    setEnquiries(data);
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const res = await getEnquiries(session);
+      setEnquiries(res.enquiries);
+      setIsLive(res.isLive);
+      if (res.error) {
+        setFetchError(res.error);
+      }
+    } catch (err: any) {
+      console.error('Error fetching enquiries:', err);
+      setFetchError(err?.message || 'Error loading enquiries.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [session]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !phone.trim()) return;
+    if (!name.trim() || !phone.trim() || isSubmittingManual) return;
 
-    await addEnquiry({
-      full_name: name.trim(),
-      phone: phone.trim(),
-      email: email.trim() || null,
-      source,
-      interested_package: plan,
-      status: 'new',
-      notes: notes.trim() || null,
-      follow_up_date: followUpDate,
-    });
+    setIsSubmittingManual(true);
+    try {
+      const res = await addEnquiry(
+        {
+          full_name: name.trim(),
+          phone: phone.trim(),
+          email: email.trim() || null,
+          source,
+          interested_package: plan,
+          status: 'new',
+          notes: notes.trim() || null,
+          follow_up_date: followUpDate,
+        },
+        session
+      );
 
-    setIsModalOpen(false);
-    setName('');
-    setPhone('');
-    setNotes('');
-    await loadData();
+      if (res.success) {
+        setIsModalOpen(false);
+        setName('');
+        setPhone('');
+        setEmail('');
+        setNotes('');
+        await loadData();
+      } else {
+        alert(res.error || 'Failed to save lead record.');
+      }
+    } finally {
+      setIsSubmittingManual(false);
+    }
   };
 
   const handleStatusChange = async (id: string, status: EnquiryStatus) => {
-    await updateEnquiryStatus(id, status);
+    await updateEnquiryStatus(id, status, undefined, session);
     await loadData();
   };
 
   const handleWhatsAppChat = (e: EnquiryRecord) => {
     const cleanPhone = e.phone.replace(/[^0-9]/g, '');
     const phoneWithCountry = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-    const text = `Hi ${e.full_name}, thank you for reaching out to Prime Fitness MH19 Jalgaon regarding our ${e.interested_package || 'membership'} programs! How can we help you get started with your trial session?`;
+    const text = `Hi ${e.full_name}, thank you for registering with Prime Fitness MH19 Jalgaon regarding our ${e.interested_package || 'membership'} programs! How can we assist you with getting started?`;
     window.open(`https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const filteredEnquiries = enquiries.filter(
-    e => statusFilter === 'all' || e.status === statusFilter
+    (e) => statusFilter === 'all' || e.status === statusFilter
   );
+
+  // Tab count badges
+  const counts = {
+    all: enquiries.length,
+    new: enquiries.filter((e) => e.status === 'new').length,
+    contacted: enquiries.filter((e) => e.status === 'contacted').length,
+    converted: enquiries.filter((e) => e.status === 'converted').length,
+    closed: enquiries.filter((e) => e.status === 'closed').length,
+  };
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 space-y-6">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-800">
         <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-0.5 bg-[#f36b22]/10 border border-[#f36b22]/30 text-[10px] font-mono text-[#f36b22] uppercase tracking-wider mb-1">
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>Lead Generation Pipeline</span>
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#f36b22]/10 border border-[#f36b22]/30 text-[10px] font-mono text-[#f36b22] uppercase tracking-wider">
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Lead Generation & Registration Pipeline</span>
+            </div>
+            {isLive ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Live Supabase Connected
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Local Cache Mode
+              </span>
+            )}
           </div>
           <h2 className="text-xl sm:text-2xl font-headline font-black uppercase tracking-tight text-white">
-            Prospective Leads & Enquiries
+            Prospective Leads & Registrations
           </h2>
           <p className="text-xs text-neutral-400 mt-0.5">
-            Capture prospective gym members, trial pass submissions, follow-up dates, and conversion notes.
+            Real-time public website registrations, free trial passes, walk-ins, and conversion to active gym members.
           </p>
         </div>
 
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-bold uppercase rounded-lg transition-colors cursor-pointer shadow-md self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Walk-in / Lead</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#181b24] hover:bg-[#222634] text-neutral-300 text-xs font-bold uppercase rounded-lg border border-neutral-700 transition-colors cursor-pointer"
+            title="Refresh lead records"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#f36b22]' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-bold uppercase rounded-lg transition-colors cursor-pointer shadow-md"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Walk-in / Lead</span>
+          </button>
+        </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-1 bg-[#14161d] p-1 rounded-lg border border-neutral-800 self-start">
-        {(['all', 'new', 'contacted', 'converted', 'closed'] as const).map(tab => (
+      {fetchError && (
+        <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{fetchError}</span>
+        </div>
+      )}
+
+      {/* Filter Tabs with Live Badges */}
+      <div className="flex items-center gap-1.5 bg-[#14161d] p-1.5 rounded-lg border border-neutral-800 self-start flex-wrap">
+        {(
+          [
+            { id: 'all', label: 'All Registrations', count: counts.all },
+            { id: 'new', label: 'New Leads', count: counts.new },
+            { id: 'contacted', label: 'Contacted', count: counts.contacted },
+            { id: 'converted', label: 'Converted', count: counts.converted },
+            { id: 'closed', label: 'Closed', count: counts.closed },
+          ] as const
+        ).map((tab) => (
           <button
-            key={tab}
-            onClick={() => setStatusFilter(tab)}
-            className={`px-3 py-1.5 text-xs font-medium uppercase tracking-wider rounded-md transition-colors cursor-pointer ${
-              statusFilter === tab
-                ? 'bg-[#f36b22] text-white font-bold'
-                : 'text-neutral-400 hover:text-white'
+            key={tab.id}
+            onClick={() => setStatusFilter(tab.id)}
+            className={`px-3 py-1.5 text-xs font-medium uppercase tracking-wider rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+              statusFilter === tab.id
+                ? 'bg-[#f36b22] text-white font-bold shadow-xs'
+                : 'text-neutral-400 hover:text-white hover:bg-neutral-800/50'
             }`}
           >
-            {tab}
+            <span>{tab.label}</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                statusFilter === tab.id
+                  ? 'bg-black/30 text-white font-bold'
+                  : 'bg-neutral-800 text-neutral-400'
+              }`}
+            >
+              {tab.count}
+            </span>
           </button>
         ))}
       </div>
 
       {/* Leads Table */}
-      <div className="bg-[#14161d] border border-neutral-800 rounded-xl overflow-hidden">
-        {filteredEnquiries.length === 0 ? (
+      <div className="bg-[#14161d] border border-neutral-800 rounded-xl overflow-hidden shadow-xl">
+        {loading && enquiries.length === 0 ? (
+          <div className="p-12 text-center text-neutral-400 text-xs flex flex-col items-center justify-center gap-2">
+            <RefreshCw className="w-5 h-5 text-[#f36b22] animate-spin" />
+            <span>Loading registrations from Supabase...</span>
+          </div>
+        ) : filteredEnquiries.length === 0 ? (
           <div className="p-12 text-center text-neutral-500 text-xs">
-            No enquiry records found in this category.
+            No registration records found in this category.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -144,27 +250,37 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-800/80">
-                {filteredEnquiries.map(enq => (
+                {filteredEnquiries.map((enq) => (
                   <tr key={enq.id} className="hover:bg-[#181a24] transition-colors">
                     <td className="py-3 px-4">
                       <div className="font-bold text-white text-sm">{enq.full_name}</div>
                       {enq.notes && (
-                        <div className="text-[11px] text-neutral-400 truncate max-w-[200px]">
+                        <div className="text-[11px] text-neutral-400 truncate max-w-[240px]" title={enq.notes}>
                           {enq.notes}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-neutral-500 font-mono mt-0.5">
+                        Received: {new Date(enq.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <div className="font-mono text-neutral-200 flex items-center gap-1.5 font-semibold">
+                        <Phone className="w-3 h-3 text-[#f36b22]" />
+                        <span>{enq.phone}</span>
+                      </div>
+                      {enq.email && (
+                        <div className="text-[10px] text-neutral-400 flex items-center gap-1 mt-0.5">
+                          <Mail className="w-2.5 h-2.5 text-neutral-500" />
+                          <span>{enq.email}</span>
                         </div>
                       )}
                     </td>
 
-                    <td className="py-3 px-4">
-                      <div className="font-mono text-neutral-300 flex items-center gap-1.5">
-                        <Phone className="w-3 h-3 text-[#f36b22]" />
-                        <span>{enq.phone}</span>
-                      </div>
-                      {enq.email && <div className="text-[10px] text-neutral-500">{enq.email}</div>}
-                    </td>
-
                     <td className="py-3 px-4 font-bold text-white uppercase text-[11px]">
-                      {enq.interested_package || 'General Inquiry'}
+                      <span className="px-2 py-0.5 bg-neutral-800/80 rounded border border-neutral-700 text-[#f36b22]">
+                        {enq.interested_package || 'General Inquiry'}
+                      </span>
                     </td>
 
                     <td className="py-3 px-4 text-neutral-400 font-mono text-[11px]">
@@ -175,13 +291,13 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                       <select
                         value={enq.status}
                         onChange={(e) => handleStatusChange(enq.id, e.target.value as EnquiryStatus)}
-                        className={`text-[10px] font-mono uppercase px-2 py-1 rounded border bg-[#0e1014] cursor-pointer focus:outline-none ${
+                        className={`text-[10px] font-mono uppercase px-2 py-1 rounded border bg-[#0e1014] cursor-pointer focus:outline-none font-bold ${
                           enq.status === 'new'
-                            ? 'text-blue-400 border-blue-500/40'
+                            ? 'text-blue-400 border-blue-500/40 bg-blue-500/5'
                             : enq.status === 'contacted'
-                            ? 'text-amber-400 border-amber-500/40'
+                            ? 'text-amber-400 border-amber-500/40 bg-amber-500/5'
                             : enq.status === 'converted'
-                            ? 'text-emerald-400 border-emerald-500/40'
+                            ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/5'
                             : 'text-neutral-500 border-neutral-700'
                         }`}
                       >
@@ -196,24 +312,31 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                       {enq.follow_up_date || '—'}
                     </td>
 
-                    <td className="py-3 px-4 text-right space-x-2">
+                    <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
                       <button
                         onClick={() => handleWhatsAppChat(enq)}
-                        className="px-2.5 py-1 bg-[#25d366]/10 hover:bg-[#25d366]/20 text-[#25d366] text-[10px] font-bold uppercase rounded border border-[#25d366]/30 transition-colors cursor-pointer"
+                        className="px-2.5 py-1 bg-[#25d366]/10 hover:bg-[#25d366]/20 text-[#25d366] text-[10px] font-bold uppercase rounded border border-[#25d366]/30 transition-colors cursor-pointer inline-flex items-center gap-1"
                       >
-                        WhatsApp
+                        <span>WhatsApp</span>
                       </button>
 
                       {enq.status !== 'converted' && onNavigateToMembers && (
                         <button
                           onClick={() => {
                             handleStatusChange(enq.id, 'converted');
-                            onNavigateToMembers();
+                            onNavigateToMembers({
+                              fullName: enq.full_name,
+                              phone: enq.phone,
+                              email: enq.email,
+                              packageName: enq.interested_package,
+                              notes: enq.notes,
+                            });
                           }}
-                          className="px-2.5 py-1 bg-[#1e2330] hover:bg-[#272d3e] text-neutral-200 text-[10px] font-bold uppercase rounded border border-neutral-700 transition-colors cursor-pointer"
-                          title="Register as Member"
+                          className="px-2.5 py-1 bg-[#f36b22]/20 hover:bg-[#f36b22] text-[#f36b22] hover:text-white text-[10px] font-bold uppercase rounded border border-[#f36b22]/40 transition-colors cursor-pointer inline-flex items-center gap-1"
+                          title="Register as Confirmed Member"
                         >
-                          Convert
+                          <UserCheck className="w-3 h-3" />
+                          <span>Convert</span>
                         </button>
                       )}
                     </td>
@@ -225,7 +348,7 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
         )}
       </div>
 
-      {/* Modal: New Enquiry */}
+      {/* Modal: New Walk-in Lead */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
           <div className="bg-[#14161d] border border-neutral-800 rounded-xl w-full max-w-md p-6 relative shadow-2xl">
@@ -234,7 +357,10 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
               <h3 className="font-headline font-black text-lg text-white uppercase tracking-tight">
                 Record New Lead / Trial Pass
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-neutral-400 hover:text-white">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-neutral-400 hover:text-white cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -245,7 +371,7 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                 <input
                   type="text"
                   value={name}
-                  onChange={e => setName(e.target.value)}
+                  onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Anand Shinde"
                   required
                   className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white focus:border-[#f36b22] focus:outline-none"
@@ -258,7 +384,7 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                   <input
                     type="tel"
                     value={phone}
-                    onChange={e => setPhone(e.target.value)}
+                    onChange={(e) => setPhone(e.target.value)}
                     placeholder="98220..."
                     required
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white font-mono focus:border-[#f36b22] focus:outline-none"
@@ -269,7 +395,7 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                   <input
                     type="email"
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="anand@example.com"
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white focus:border-[#f36b22] focus:outline-none"
                   />
@@ -281,10 +407,11 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                   <label className="block font-medium text-neutral-300 mb-1">Lead Source</label>
                   <select
                     value={source}
-                    onChange={e => setSource(e.target.value)}
+                    onChange={(e) => setSource(e.target.value)}
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white focus:border-[#f36b22] focus:outline-none"
                   >
                     <option value="Website Trial Pass">Website Trial Pass</option>
+                    <option value="Website Membership Registration">Website Membership Registration</option>
                     <option value="Walk-in Visit">Walk-in Visit</option>
                     <option value="Instagram / Social">Instagram / Social</option>
                     <option value="Member Referral">Member Referral</option>
@@ -295,13 +422,14 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                   <label className="block font-medium text-neutral-300 mb-1">Interested In</label>
                   <select
                     value={plan}
-                    onChange={e => setPlan(e.target.value)}
+                    onChange={(e) => setPlan(e.target.value)}
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white focus:border-[#f36b22] focus:outline-none"
                   >
                     <option value="1 MONTH STANDARD">1 MONTH STANDARD</option>
                     <option value="3 MONTHS INTENSIVE">3 MONTHS INTENSIVE</option>
                     <option value="6 MONTHS ATHLETIC">6 MONTHS ATHLETIC</option>
                     <option value="12 MONTHS PRIME PRO">12 MONTHS PRIME PRO</option>
+                    <option value="Free 1-Day Trial Pass">Free 1-Day Trial Pass</option>
                   </select>
                 </div>
               </div>
@@ -311,7 +439,7 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                 <input
                   type="date"
                   value={followUpDate}
-                  onChange={e => setFollowUpDate(e.target.value)}
+                  onChange={(e) => setFollowUpDate(e.target.value)}
                   className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white font-mono"
                 />
               </div>
@@ -320,7 +448,7 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                 <label className="block font-medium text-neutral-300 mb-1">Notes / Athlete Goals</label>
                 <textarea
                   value={notes}
-                  onChange={e => setNotes(e.target.value)}
+                  onChange={(e) => setNotes(e.target.value)}
                   rows={3}
                   placeholder="Goals: Fat loss, heavy deadlifts, timings preferred..."
                   className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white"
@@ -331,15 +459,17 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-700 rounded-lg text-neutral-300"
+                  className="px-4 py-2 border border-neutral-700 rounded-lg text-neutral-300 cursor-pointer hover:bg-neutral-800"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#f36b22] text-white font-bold rounded-lg hover:bg-[#d95614]"
+                  disabled={isSubmittingManual}
+                  className="px-5 py-2 bg-[#f36b22] text-white font-bold rounded-lg hover:bg-[#d95614] cursor-pointer flex items-center gap-1.5"
                 >
-                  Save Lead
+                  {isSubmittingManual && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Save Lead</span>
                 </button>
               </div>
             </form>

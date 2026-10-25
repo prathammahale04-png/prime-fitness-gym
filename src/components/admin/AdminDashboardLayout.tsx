@@ -10,7 +10,7 @@ import { CheckInView } from './CheckInView';
 import { AnalyticsView } from './AnalyticsView';
 import { EventsChallengesView } from './EventsChallengesView';
 import { TrainersAdminView } from './TrainersAdminView';
-import { EnquiriesView } from './EnquiriesView';
+import { EnquiriesView, LeadConvertData } from './EnquiriesView';
 import { InstitutionSettingsView } from './InstitutionSettingsView';
 import { MembershipRemindersView } from './MembershipRemindersView';
 
@@ -21,6 +21,7 @@ interface AdminDashboardLayoutProps {
 export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({ onViewWebsite }) => {
   const [currentSection, setCurrentSection] = useState<AdminSection>('overview');
   const [isOpenMobile, setIsOpenMobile] = useState<boolean>(false);
+  const [convertLeadData, setConvertLeadData] = useState<LeadConvertData | null>(null);
 
   return (
     <div className="min-h-screen bg-[#0d0e12] text-neutral-100 flex selection:bg-[#f36b22] selection:text-white">
@@ -46,7 +47,10 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({ onVi
             <OverviewView onNavigateSection={setCurrentSection} />
           )}
           {currentSection === 'members' && (
-            <MembersView />
+            <MembersView
+              initialMemberData={convertLeadData}
+              onClearInitialData={() => setConvertLeadData(null)}
+            />
           )}
           {currentSection === 'packages' && (
             <PackagesView />
@@ -67,7 +71,12 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({ onVi
             <TrainersAdminView />
           )}
           {currentSection === 'enquiries' && (
-            <EnquiriesView onNavigateToMembers={() => setCurrentSection('members')} />
+            <EnquiriesView
+              onNavigateToMembers={(leadData) => {
+                if (leadData) setConvertLeadData(leadData);
+                setCurrentSection('members');
+              }}
+            />
           )}
           {currentSection === 'challenges' && (
             <EventsChallengesView initialTab="challenges" />

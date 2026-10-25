@@ -76,6 +76,35 @@ export const getSupabase = (): SupabaseClient => {
 export const supabase = getSupabase();
 
 /**
+ * Creates or retrieves a scoped Supabase client with the authenticated user's Bearer JWT
+ * explicitly attached in the Authorization header. This guarantees requests to protected
+ * tables (such as members and profiles) execute under the 'authenticated' PostgreSQL role
+ * rather than falling back to 'anon'.
+ */
+export const getAuthenticatedClient = (
+  tokenOrSession?: string | { access_token?: string } | null
+): SupabaseClient => {
+  const token = typeof tokenOrSession === 'string' ? tokenOrSession : tokenOrSession?.access_token;
+
+  if (!token || !isSupabaseConfigured()) {
+    return getSupabase();
+  }
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  });
+};
+
+/**
  * Diagnostic helper to test the live connection to Supabase
  */
 export async function testSupabaseConnection(): Promise<{

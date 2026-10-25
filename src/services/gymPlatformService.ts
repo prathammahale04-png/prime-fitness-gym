@@ -834,9 +834,9 @@ export interface OverviewStats {
   recentCheckIns: CheckInRecord[];
 }
 
-export async function getOverviewStats(period: 'today' | 'week' | 'month' | 'year' = 'month'): Promise<OverviewStats> {
+export async function getOverviewStats(period: 'today' | 'week' | 'month' | 'year' = 'month', session?: any): Promise<OverviewStats> {
   const [membersRes, paymentsList, checkinsList] = await Promise.all([
-    getMembers(),
+    getMembers(undefined, session),
     getPayments(),
     getCheckIns(),
   ]);

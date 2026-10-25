@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Member, MembershipPackage } from '../../types/database.types';
-import { getMembers, addMember, renewMember, toggleMemberDeactivate, calculateExpiryDate, updateMemberPhone } from '../../services/memberService';
+import { getMembers, addMember, renewMember, toggleMemberDeactivate, calculateExpiryDate, updateMemberPhone, syncCachedMembersToDatabase } from '../../services/memberService';
 import { getPackages } from '../../services/packageService';
 import { recordPayment } from '../../services/gymPlatformService';
 import { WhatsAppReminderModal } from './WhatsAppReminderModal';
@@ -20,6 +20,7 @@ import {
   Phone,
   Calendar,
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   X,
   CreditCard,
@@ -37,6 +38,10 @@ export const MembersView: React.FC = () => {
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
+  const [isCachedFallback, setIsCachedFallback] = useState(false);
+  const [isSyncingCached, setIsSyncingCached] = useState(false);
+  const [syncSuccessMsg, setSyncSuccessMsg] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'inactive'>('all');
 
@@ -66,12 +71,21 @@ export const MembersView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setSyncError(null);
     const [membersRes, pkgRes] = await Promise.all([
-      getMembers({ search: searchQuery, status: statusFilter }),
+      getMembers({ search: searchQuery, status: statusFilter }, session),
       getPackages(),
     ]);
     setMembers(membersRes.members);
     setIsLive(membersRes.isLive);
+    setIsCachedFallback(Boolean(membersRes.isCachedFallback));
+    if (membersRes.error) {
+      setSyncError(membersRes.error);
+    } else if (membersRes.notice) {
+      setSyncError(membersRes.notice);
+    } else {
+      setSyncError(null);
+    }
     setPackages(pkgRes.packages.filter(p => p.is_active));
     if (pkgRes.packages.length > 0 && !selectedPkgId) {
       setSelectedPkgId(pkgRes.packages[0].id);
@@ -80,11 +94,28 @@ export const MembersView: React.FC = () => {
     setLoading(false);
   };
 
+  const handleUploadCachedToDb = async () => {
+    setIsSyncingCached(true);
+    setSyncSuccessMsg(null);
+    const res = await syncCachedMembersToDatabase();
+    setIsSyncingCached(false);
+    if (res.success) {
+      const summaryParts = [];
+      if (res.succeeded.length > 0) summaryParts.push(`Uploaded ${res.succeeded.length} (${res.succeeded.join(', ')})`);
+      if (res.skipped.length > 0) summaryParts.push(`Already in database: ${res.skipped.join(', ')}`);
+      setSyncSuccessMsg(`✓ Sync complete: ${summaryParts.join(' | ') || 'All records up to date.'}`);
+      await loadData();
+      setTimeout(() => setSyncSuccessMsg(null), 6000);
+    } else {
+      setSyncError(res.error || 'Failed to upload cached members to Supabase.');
+    }
+  };
+
   useEffect(() => {
     if (!authLoading) {
       loadData();
     }
-  }, [authLoading, session?.user?.id, statusFilter]);
+  }, [authLoading, session?.user?.id, session?.access_token, statusFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,16 +196,20 @@ export const MembersView: React.FC = () => {
         emergency_contact: emergencyContact.trim() || undefined,
         notes: notes.trim() || undefined,
       },
-      activeSelectedPkg
+      activeSelectedPkg,
+      session
     );
 
     setIsSubmitting(false);
 
     if (!res.success) {
-      setFormError(res.error || 'Failed to add member.');
-    } else {
-      // Automatically record initial fee in billing ledger if payment was collected
-      if (res.data && Number(amountPaid) > 0) {
+      setFormError(res.error || 'Failed to add member to database.');
+      return;
+    }
+
+    // Automatically record initial fee in billing ledger if payment was collected
+    if (res.data && Number(amountPaid) > 0) {
+      try {
         await recordPayment({
           member_id: res.data.id,
           member_name: res.data.full_name,
@@ -184,10 +219,15 @@ export const MembersView: React.FC = () => {
           payment_date: startDate,
           notes: `Registration payment for ${activeSelectedPkg.name}`,
         });
+      } catch (payErr) {
+        console.warn('Payment recording notice:', payErr);
       }
-      setIsAddOpen(false);
-      await loadData();
     }
+
+    setSyncSuccessMsg(`✓ Member "${res.data?.full_name}" (${res.data?.member_code}) successfully added to database!`);
+    setIsAddOpen(false);
+    await loadData();
+    setTimeout(() => setSyncSuccessMsg(null), 6000);
   };
 
   const handleOpenRenew = (m: Member) => {
@@ -210,31 +250,44 @@ export const MembersView: React.FC = () => {
       selectedMember.id,
       activeRenewPkg,
       renewStartDate,
-      Number(renewAmountPaid)
+      Number(renewAmountPaid),
+      session
     );
     setIsSubmitting(false);
 
     if (res.success) {
       // Automatically record renewal payment in billing ledger
       if (Number(renewAmountPaid) > 0) {
-        await recordPayment({
-          member_id: selectedMember.id,
-          member_name: selectedMember.full_name,
-          amount: Number(renewAmountPaid),
-          payment_method: 'cash',
-          reference_id: 'RENEWAL',
-          payment_date: renewStartDate,
-          notes: `Renewal payment for ${activeRenewPkg.name}`,
-        });
+        try {
+          await recordPayment({
+            member_id: selectedMember.id,
+            member_name: selectedMember.full_name,
+            amount: Number(renewAmountPaid),
+            payment_method: 'cash',
+            reference_id: 'RENEWAL',
+            payment_date: renewStartDate,
+            notes: `Renewal payment for ${activeRenewPkg.name}`,
+          });
+        } catch (payErr) {
+          console.warn('Payment recording notice:', payErr);
+        }
       }
+      setSyncSuccessMsg(`✓ Membership renewed for "${selectedMember.full_name}"!`);
       setIsRenewOpen(false);
       await loadData();
+      setTimeout(() => setSyncSuccessMsg(null), 5000);
+    } else {
+      setSyncError(res.error || 'Failed to renew membership.');
     }
   };
 
   const handleToggleDeactivate = async (m: Member) => {
-    await toggleMemberDeactivate(m.id, m.status);
-    await loadData();
+    const res = await toggleMemberDeactivate(m.id, m.status, session);
+    if (!res.success) {
+      setSyncError(res.error || 'Failed to update member status.');
+    } else {
+      await loadData();
+    }
   };
 
   const handleOpenWhatsAppReminder = (m: Member) => {
@@ -290,16 +343,28 @@ export const MembersView: React.FC = () => {
           <div
             className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-mono border ${
               isLive
-                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400'
+                ? isCachedFallback
+                  ? 'bg-amber-950/40 border-amber-800/60 text-amber-300'
+                  : 'bg-emerald-950/40 border-emerald-800/60 text-emerald-400'
                 : 'bg-amber-950/40 border-amber-800/60 text-amber-400'
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full ${
-                isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                isLive
+                  ? isCachedFallback
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-400 animate-pulse'
+                  : 'bg-amber-400'
               }`}
             />
-            <span>{isLive ? 'Live Supabase' : 'Offline Cache'}</span>
+            <span>
+              {isLive
+                ? isCachedFallback
+                  ? 'Live Supabase · Cached Records'
+                  : 'Live Supabase'
+                : 'Offline Cache'}
+            </span>
           </div>
 
           <button
@@ -321,6 +386,56 @@ export const MembersView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Sync Status / Offline Notice Banner */}
+      {(syncError || syncSuccessMsg) && (
+        <div className={`p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs border ${
+          syncSuccessMsg
+            ? 'bg-emerald-950/30 border-emerald-800/60 text-emerald-300'
+            : isLive
+            ? 'bg-amber-950/30 border-amber-800/60 text-amber-300'
+            : 'bg-neutral-900 border-neutral-800 text-neutral-300'
+        }`}>
+          <div className="flex items-start gap-2.5">
+            {syncSuccessMsg ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <strong className="text-white block font-headline uppercase tracking-wider text-[11px] mb-0.5">
+                {syncSuccessMsg
+                  ? 'Supabase Sync Completed'
+                  : isCachedFallback
+                  ? 'Database Empty · Cached Fallback Active'
+                  : isLive
+                  ? 'Sync Notice'
+                  : 'Data Source Notice'}
+              </strong>
+              <p className="text-neutral-300 leading-relaxed font-mono text-[11px]">
+                {syncSuccessMsg || syncError}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {isCachedFallback && !syncSuccessMsg && (
+              <button
+                onClick={handleUploadCachedToDb}
+                disabled={isSyncingCached}
+                className="px-3 py-1.5 bg-[#f36b22] hover:bg-[#d95614] text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isSyncingCached ? 'Uploading...' : 'Upload Cached to Supabase'}
+              </button>
+            )}
+            <button
+              onClick={() => loadData()}
+              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0"
+            >
+              Retry Live Sync
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats Summary Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -50,7 +50,7 @@ export const BillingView: React.FC = () => {
     setLoading(true);
     const [paymentsRes, membersRes, packagesRes] = await Promise.all([
       getPayments(),
-      getMembers(),
+      getMembers(undefined, session),
       getPackages(),
     ]);
     setPayments(paymentsRes);

@@ -40,7 +40,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
   const loadData = async () => {
     setLoading(true);
     const [s, conn] = await Promise.all([
-      getOverviewStats(period),
+      getOverviewStats(period, session),
       testSupabaseConnection(),
     ]);
     setStats(s);
@@ -52,7 +52,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
     if (!authLoading) {
       loadData();
     }
-  }, [authLoading, session?.user?.id, period]);
+  }, [authLoading, session?.user?.id, session?.access_token, period]);
 
   const handleSendReminder = (m: any) => {
     const validation = normalizeIndianPhoneNumber(m.phone);

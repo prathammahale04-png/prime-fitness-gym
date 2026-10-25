@@ -66,7 +66,7 @@ export const MembershipRemindersView: React.FC<MembershipRemindersViewProps> = (
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await getMembers();
+      const res = await getMembers(undefined, session);
       setMembers(res.members || []);
       setIsLive(res.isLive);
       if (res.error) {
@@ -77,7 +77,7 @@ export const MembershipRemindersView: React.FC<MembershipRemindersViewProps> = (
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session]);
 
   // Wait for authentication session to initialize before querying member records
   useEffect(() => {

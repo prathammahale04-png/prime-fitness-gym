@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { getPayments } from '../../services/gymPlatformService';
 import { getMembers } from '../../services/memberService';
 import { getCheckIns } from '../../services/gymPlatformService';
@@ -15,18 +16,21 @@ import {
 } from 'lucide-react';
 
 export const AnalyticsView: React.FC = () => {
+  const { session, loading: authLoading } = useAuth();
   const [payments, setPayments] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [checkins, setCheckins] = useState<any[]>([]);
   const [timeRange, setTimeRange] = useState<'30days' | '6months' | 'year'>('6months');
 
   useEffect(() => {
-    Promise.all([getPayments(), getMembers(), getCheckIns()]).then(([p, m, c]) => {
-      setPayments(p);
-      setMembers(m.members);
-      setCheckins(c);
-    });
-  }, []);
+    if (!authLoading) {
+      Promise.all([getPayments(), getMembers(undefined, session), getCheckIns()]).then(([p, m, c]) => {
+        setPayments(p);
+        setMembers(m.members);
+        setCheckins(c);
+      });
+    }
+  }, [authLoading, session?.user?.id]);
 
   const totalRevenue = useMemo(() => {
     return payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);

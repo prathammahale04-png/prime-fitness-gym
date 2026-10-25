@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import { UserProfile, AppRole } from '../types/database.types';
-import { clearMemberCache } from '../services/memberService';
 
 interface AuthContextType {
   user: User | null;
@@ -29,17 +28,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const configured = isSupabaseConfigured();
 
-  const fetchProfile = useCallback(async (userId: string, userEmail: string): Promise<UserProfile | null> => {
+  const fetchProfile = useCallback(async (userId: string, userEmail: string, accessToken?: string): Promise<UserProfile | null> => {
     if (!configured) return null;
 
     try {
-      const { data, error: profileErr } = await supabase
+      const client = getAuthenticatedClient(accessToken);
+      const { data, error: profileErr } = await client
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
 
       const isDesignatedOwner = userEmail.toLowerCase() === 'pranavsonawane1328@gmail.com';
+
+      console.info('[Auth Profile Diagnostic]', {
+        userIdPrefix: userId ? `${userId.substring(0, 8)}...` : 'none',
+        userEmail,
+        hasAccessToken: Boolean(accessToken),
+        profileFound: Boolean(data),
+        profileRole: data?.role || 'none',
+        isActive: data?.is_active,
+        isDesignatedOwner,
+        queryError: profileErr ? profileErr.message : null,
+      });
 
       if (profileErr) {
         console.warn('Profile fetch warning (table may be pending migration):', profileErr.message);
@@ -105,7 +116,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (initialSession?.user) {
         setSession(initialSession);
         setUser(initialSession.user);
-        const userProfile = await fetchProfile(initialSession.user.id, initialSession.user.email || '');
+        const userProfile = await fetchProfile(initialSession.user.id, initialSession.user.email || '', initialSession.access_token);
         if (isMounted) setProfile(userProfile);
       } else {
         setSession(null);
@@ -123,14 +134,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       async (event, currentSession) => {
         if (!isMounted) return;
 
-        if (event === 'SIGNED_OUT') {
-          clearMemberCache();
-        }
-
         setSession(currentSession);
         if (currentSession?.user) {
           setUser(currentSession.user);
-          const userProfile = await fetchProfile(currentSession.user.id, currentSession.user.email || '');
+          const userProfile = await fetchProfile(currentSession.user.id, currentSession.user.email || '', currentSession.access_token);
           if (isMounted) setProfile(userProfile);
         } else {
           setUser(null);
@@ -169,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.user) {
         setUser(data.user);
         setSession(data.session);
-        const userProfile = await fetchProfile(data.user.id, data.user.email || '');
+        const userProfile = await fetchProfile(data.user.id, data.user.email || '', data.session?.access_token);
         setProfile(userProfile);
       }
 
@@ -190,7 +197,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       console.warn('Sign out warning:', err);
     } finally {
-      clearMemberCache();
       setUser(null);
       setSession(null);
       setProfile(null);
@@ -199,7 +205,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async () => {
     if (user) {
-      const updated = await fetchProfile(user.id, user.email || '');
+      const { data: sessionData } = await supabase.auth.getSession();
+      const updated = await fetchProfile(user.id, user.email || '', sessionData?.session?.access_token);
       setProfile(updated);
     }
   };

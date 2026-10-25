@@ -99,7 +99,14 @@ export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onBackToWebsite,
           {activeError && (
             <div className="mb-6 p-3.5 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">{activeError}</div>
+              <div className="leading-relaxed">
+                <div>{activeError}</div>
+                {activeError.includes('pending owner approval') && (
+                  <p className="mt-1.5 text-[11px] text-neutral-400 leading-normal">
+                    Authentication credentials are valid, but no matching active profile exists for this account in the database. The gym owner must provision or approve your account profile in Supabase.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 

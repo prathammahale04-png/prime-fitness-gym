@@ -136,6 +136,7 @@ function AppContent() {
         {/* Section 1: Hero ("BUILD YOUR BODY" giant background watermark, panoramic athlete) */}
         <AntiqueHero
           onReadMore={() => scrollTo('about')}
+          onExplorePlans={() => scrollTo('prices')}
         />
 
         {/* Section 2: "YOUR BODY IS A WORK OF ART" (Orange border box, core workout athlete, vertical dots) */}

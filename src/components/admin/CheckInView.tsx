@@ -30,7 +30,7 @@ export const CheckInView: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     const [mRes, cRes] = await Promise.all([
-      getMembers(),
+      getMembers(undefined, session),
       getCheckIns(),
     ]);
     setMembers(mRes.members);

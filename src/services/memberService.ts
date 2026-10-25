@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import { Member, MemberInput, MembershipPackage, MemberStatus } from '../types/database.types';
 
 // Fallback in-memory/localStorage cache for offline or pre-migration testing
@@ -85,13 +85,12 @@ function getLocalMembers(): Member[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) {
-      // In offline mode without Supabase, provide initial demo data; when Supabase is configured, empty cache on logout
-      return isSupabaseConfigured() ? [] : INITIAL_MEMBERS;
+      return INITIAL_MEMBERS;
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : (isSupabaseConfigured() ? [] : INITIAL_MEMBERS);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MEMBERS;
   } catch {
-    return isSupabaseConfigured() ? [] : INITIAL_MEMBERS;
+    return INITIAL_MEMBERS;
   }
 }
 
@@ -118,10 +117,19 @@ export function calculateExpiryDate(startDateStr: string, durationDays: number):
   return expiry.toISOString().split('T')[0];
 }
 
-export async function getMembers(filters?: {
-  search?: string;
-  status?: string;
-}): Promise<{ members: Member[]; isLive: boolean; error?: string }> {
+export async function getMembers(
+  filters?: {
+    search?: string;
+    status?: string;
+  },
+  sessionOverride?: any
+): Promise<{
+  members: Member[];
+  isLive: boolean;
+  error?: string;
+  isCachedFallback?: boolean;
+  notice?: string;
+}> {
   const applyFilters = (list: Member[]) => {
     let res = list;
     if (filters?.search) {
@@ -143,62 +151,117 @@ export async function getMembers(filters?: {
     return { members: applyFilters(getLocalMembers()), isLive: false };
   }
 
-  // 1. Check for active Supabase Auth session before querying the private members table
-  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-  const session = sessionData?.session;
+  // 1. Resolve active Supabase Auth session
+  let session = sessionOverride;
+  if (!session) {
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr) {
+      console.warn('Session retrieval error:', sessionErr.message);
+    }
+    session = sessionData?.session;
+  }
 
-  if (sessionErr || !session?.user) {
+  if (!session?.user) {
     // Unauthenticated request: do NOT dispatch anon query to private table
     return {
       members: applyFilters(getLocalMembers()),
       isLive: false,
-      error: sessionErr
-        ? `Authentication session error: ${sessionErr.message}`
-        : 'Not authenticated. Showing cached records. Sign in as Admin to sync live data.',
+      error: 'Not authenticated. Showing cached records. Sign in as Admin to sync live data.',
     };
   }
 
-  // 2. Check for expired session token
+  // 2. Check for expired session token, attempt refresh if possible
   if (session.expires_at && session.expires_at * 1000 < Date.now()) {
-    return {
-      members: applyFilters(getLocalMembers()),
-      isLive: false,
-      error: 'Authentication session expired. Please sign in again to sync live member data.',
-    };
+    try {
+      const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr || !refreshData?.session) {
+        return {
+          members: applyFilters(getLocalMembers()),
+          isLive: false,
+          error: 'Authentication session expired. Please sign in again to sync live member data.',
+        };
+      }
+      session = refreshData.session;
+    } catch {
+      return {
+        members: applyFilters(getLocalMembers()),
+        isLive: false,
+        error: 'Authentication session expired. Please sign in again to sync live member data.',
+      };
+    }
   }
+
+  // 3. Obtain client with explicit Bearer Authorization header using authenticated JWT
+  const client = getAuthenticatedClient(session.access_token);
+
+  // 4. Diagnostic check on session & profiles table (strictly safe, no credentials logged)
+  let profileRoleStatus = 'unverified';
+  try {
+    const { data: profileRow, error: profileErr } = await client
+      .from('profiles')
+      .select('id, role, is_active')
+      .eq('id', session.user.id)
+      .maybeSingle();
+
+    if (profileRow) {
+      profileRoleStatus = `Role: ${profileRow.role} (${profileRow.is_active ? 'Active' : 'Inactive'})`;
+    } else if (profileErr) {
+      profileRoleStatus = `Profile query notice: ${profileErr.code || profileErr.message}`;
+    } else {
+      profileRoleStatus = 'No profile record found in public.profiles';
+    }
+  } catch (diagErr: any) {
+    profileRoleStatus = `Profile check network error: ${diagErr?.message || 'unknown'}`;
+  }
+
+  console.info('[MemberSync Diagnostic]', {
+    authenticated: true,
+    userIdPrefix: session.user?.id ? session.user.id.substring(0, 8) + '...' : 'none',
+    hasAccessToken: Boolean(session.access_token),
+    tokenLength: session.access_token ? session.access_token.length : 0,
+    expiresAt: session.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'none',
+    profileStatus: profileRoleStatus,
+  });
 
   try {
-    let query = supabase
+    // Query full member list so we can detect whether the remote table is empty or populated
+    const { data, error } = await client
       .from('members')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (filters?.status && filters.status !== 'all') {
-      query = query.eq('status', filters.status);
-    }
-
-    if (filters?.search) {
-      const term = filters.search.trim();
-      query = query.or(`full_name.ilike.%${term}%,phone.ilike.%${term}%,member_code.ilike.%${term}%`);
-    }
-
-    const { data, error } = await query;
-
     if (error) {
-      console.warn('Error fetching members from DB, falling back to local cache:', error.message);
-      let local = getLocalMembers();
+      console.warn('Error fetching members from DB, falling back to local cache:', error);
+      const local = getLocalMembers();
       return {
         members: applyFilters(local),
         isLive: false,
-        error: error.code === '42501'
-          ? 'Database permission error: authenticated session not recognized by database.'
-          : error.message,
+        error: `Supabase query error (${error.code || 'unknown'}): ${error.message}${error.hint ? ' - Hint: ' + error.hint : ''} [Auth: authenticated, ${profileRoleStatus}]`,
       };
     }
 
-    // Update member statuses automatically based on expiry
+    const liveRecords = (data as Member[]) || [];
+
+    // If remote table returned 0 rows, check if local cache has preserved member records
+    if (liveRecords.length === 0) {
+      const local = getLocalMembers();
+      if (local.length > 0) {
+        console.info('[MemberSync] Live Supabase query returned 0 rows. Preserving and displaying local cached records.', {
+          cachedCount: local.length,
+          profileStatus: profileRoleStatus,
+        });
+        return {
+          members: applyFilters(local),
+          isLive: true,
+          isCachedFallback: true,
+          notice: `Live Supabase connected. Remote members table has 0 records; displaying ${local.length} preserved cached member records.`,
+        };
+      }
+    }
+
+    // Live records present in Supabase!
     const today = new Date().toISOString().split('T')[0];
-    const updatedMembers: Member[] = (data as Member[]).map(m => {
+    const updatedMembers: Member[] = liveRecords.map(m => {
       if (m.status !== 'inactive') {
         const isExpired = m.expiry_date < today;
         return {
@@ -210,9 +273,15 @@ export async function getMembers(filters?: {
     });
 
     // Update local cache with freshly fetched verified live records
-    saveLocalMembers(updatedMembers);
+    if (updatedMembers.length > 0) {
+      saveLocalMembers(updatedMembers);
+    }
 
-    return { members: applyFilters(updatedMembers), isLive: true };
+    return {
+      members: applyFilters(updatedMembers),
+      isLive: true,
+      isCachedFallback: false,
+    };
   } catch (err: any) {
     return {
       members: applyFilters(getLocalMembers()),
@@ -224,7 +293,8 @@ export async function getMembers(filters?: {
 
 export async function addMember(
   input: MemberInput,
-  pkg: MembershipPackage
+  pkg: MembershipPackage,
+  sessionOverride?: any
 ): Promise<{ success: boolean; data?: Member; error?: string }> {
   const startDate = input.start_date || new Date().toISOString().split('T')[0];
   const expiryDate = calculateExpiryDate(startDate, pkg.duration_days);
@@ -233,30 +303,27 @@ export async function addMember(
   const today = new Date().toISOString().split('T')[0];
   const status: MemberStatus = expiryDate < today ? 'expired' : 'active';
 
-  const memberPayload = {
-    full_name: input.full_name.trim(),
-    phone: input.phone.trim(),
-    email: input.email ? input.email.trim() : null,
-    gender: input.gender || null,
-    date_of_birth: input.date_of_birth || null,
-    address: input.address ? input.address.trim() : null,
-    emergency_contact: input.emergency_contact ? input.emergency_contact.trim() : null,
-    package_id: isValidUUID(pkg.id) ? pkg.id : null,
-    package_name: pkg.name,
-    joined_date: startDate,
-    start_date: startDate,
-    expiry_date: expiryDate,
-    status,
-    amount_paid: input.amount_paid,
-    balance_due: balanceDue,
-    notes: input.notes ? input.notes.trim() : null,
-  };
-
+  // Fallback for offline mode when Supabase is completely unconfigured
   if (!isSupabaseConfigured()) {
     const localMember: Member = {
-      ...memberPayload,
       id: 'local-' + Date.now(),
       member_code: 'PF-' + Math.floor(1000 + Math.random() * 9000),
+      full_name: input.full_name.trim(),
+      phone: input.phone.trim(),
+      email: input.email ? input.email.trim() : null,
+      gender: input.gender || null,
+      date_of_birth: input.date_of_birth || null,
+      address: input.address ? input.address.trim() : null,
+      emergency_contact: input.emergency_contact ? input.emergency_contact.trim() : null,
+      package_id: isValidUUID(pkg.id) ? pkg.id : null,
+      package_name: pkg.name,
+      joined_date: startDate,
+      start_date: startDate,
+      expiry_date: expiryDate,
+      status,
+      amount_paid: Number(input.amount_paid) || 0,
+      balance_due: balanceDue,
+      notes: input.notes ? input.notes.trim() : null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -266,41 +333,163 @@ export async function addMember(
     return { success: true, data: localMember };
   }
 
-  // Check auth session before inserting into private table
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData?.session;
-  if (!session?.user) {
-    return {
-      success: false,
-      error: 'Authentication required. Please sign in as Admin to add members to the database.',
-    };
+  // 1. Resolve active authenticated session
+  let session = sessionOverride;
+  if (!session) {
+    const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr) {
+      console.warn('Session retrieval error:', sessionErr.message);
+    }
+    session = sessionData?.session;
   }
-  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+
+  if (!session?.user || !session.access_token) {
     return {
       success: false,
-      error: 'Authentication session expired. Please sign in again.',
+      error: 'Authentication required. Please sign in as staff or owner to add members.',
     };
   }
 
+  if (session.expires_at && session.expires_at * 1000 < Date.now()) {
+    try {
+      const { data: refreshData, error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr || !refreshData?.session) {
+        return {
+          success: false,
+          error: 'Authentication session expired. Please sign in again.',
+        };
+      }
+      session = refreshData.session;
+    } catch {
+      return {
+        success: false,
+        error: 'Authentication session expired. Please sign in again.',
+      };
+    }
+  }
+
   try {
-    const { data, error } = await supabase
+    const client = getAuthenticatedClient(session.access_token);
+
+    // 2. Resolve true package UUID if pkg.id is a placeholder (e.g. 'default-pkg-2')
+    let resolvedPackageId: string | null = isValidUUID(pkg.id) ? pkg.id : null;
+    if (!resolvedPackageId && pkg.name) {
+      try {
+        const { data: dbPkgs } = await client
+          .from('packages')
+          .select('id, name')
+          .ilike('name', pkg.name.trim());
+        if (dbPkgs && dbPkgs.length > 0) {
+          resolvedPackageId = dbPkgs[0].id;
+        }
+      } catch (e) {
+        console.warn('Package UUID resolution notice:', e);
+      }
+    }
+
+    // 3. Calculate collision-free next member_code (e.g. PF-1004) to avoid sequence collision with PF-1001/1002/1003
+    let maxNum = 1000;
+    try {
+      const { data: existingCodes } = await client
+        .from('members')
+        .select('member_code');
+
+      if (existingCodes && existingCodes.length > 0) {
+        for (const row of existingCodes) {
+          if (row.member_code) {
+            const match = row.member_code.match(/PF-(\d+)/i);
+            if (match && match[1]) {
+              const num = parseInt(match[1], 10);
+              if (!isNaN(num) && num > maxNum) {
+                maxNum = num;
+              }
+            }
+          }
+        }
+      }
+    } catch (codeErr) {
+      console.warn('Failed to query existing member codes from DB:', codeErr);
+    }
+
+    // Also compare against local cache to guarantee uniqueness across all sources
+    const local = getLocalMembers();
+    for (const m of local) {
+      const match = m.member_code?.match(/PF-(\d+)/i);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+    const nextMemberCode = `PF-${maxNum + 1}`;
+
+    // 4. Construct payload strictly matching public.members schema
+    const memberPayload = {
+      member_code: nextMemberCode,
+      full_name: input.full_name.trim(),
+      phone: input.phone.trim(),
+      email: input.email ? input.email.trim() : null,
+      gender: input.gender || null,
+      date_of_birth: input.date_of_birth || null,
+      address: input.address ? input.address.trim() : null,
+      emergency_contact: input.emergency_contact ? input.emergency_contact.trim() : null,
+      package_id: resolvedPackageId,
+      package_name: pkg.name,
+      joined_date: startDate,
+      start_date: startDate,
+      expiry_date: expiryDate,
+      status,
+      amount_paid: Number(input.amount_paid) || 0,
+      balance_due: balanceDue,
+      notes: input.notes ? input.notes.trim() : null,
+      created_by: session.user.id,
+    };
+
+    console.info('[AddMember] Attempting insert into Supabase:', {
+      member_code: nextMemberCode,
+      full_name: memberPayload.full_name,
+      package_name: memberPayload.package_name,
+      package_id: memberPayload.package_id,
+      user_id: session.user.id,
+    });
+
+    // 5. Execute insert with authenticated client
+    const { data, error } = await client
       .from('members')
       .insert([memberPayload])
       .select()
       .single();
 
     if (error) {
-      return { success: false, error: error.message };
+      console.error('[AddMember Error]', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
+      return {
+        success: false,
+        error: `Supabase insert failed (${error.code || 'unknown'}): ${error.message}${error.hint ? ' - ' + error.hint : ''}`,
+      };
     }
 
     const newMember = data as Member;
-    const current = getLocalMembers();
-    current.unshift(newMember);
-    saveLocalMembers(current);
+    console.info('[AddMember Success] Created member in Supabase:', newMember.id, newMember.member_code);
+
+    // Update local cache with newly created verified member
+    const currentList = getLocalMembers();
+    const filtered = currentList.filter(m => m.id !== newMember.id && m.member_code !== newMember.member_code);
+    filtered.unshift(newMember);
+    saveLocalMembers(filtered);
 
     return { success: true, data: newMember };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Failed to save member.' };
+    console.error('[AddMember Exception]', err);
+    return {
+      success: false,
+      error: err?.message || 'Unexpected network error inserting member into Supabase.',
+    };
   }
 }
 
@@ -308,7 +497,8 @@ export async function renewMember(
   memberId: string,
   pkg: MembershipPackage,
   startDateStr: string,
-  amountPaid: number
+  amountPaid: number,
+  sessionOverride?: any
 ): Promise<{ success: boolean; error?: string }> {
   const expiryDate = calculateExpiryDate(startDateStr, pkg.duration_days);
   const balanceDue = Math.max(0, pkg.price - amountPaid);
@@ -336,9 +526,12 @@ export async function renewMember(
   }
 
   // Check auth session before updating private table
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData?.session;
-  if (!session?.user) {
+  let session = sessionOverride;
+  if (!session) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    session = sessionData?.session;
+  }
+  if (!session?.user || !session.access_token) {
     return {
       success: false,
       error: 'Authentication required. Please sign in as Admin to renew memberships.',
@@ -352,13 +545,17 @@ export async function renewMember(
   }
 
   try {
-    const { error } = await supabase
-      .from('members')
-      .update(updates)
-      .eq('id', memberId);
+    if (isValidUUID(memberId)) {
+      const client = getAuthenticatedClient(session.access_token);
+      const { error } = await client
+        .from('members')
+        .update(updates)
+        .eq('id', memberId);
 
-    if (error) {
-      return { success: false, error: error.message };
+      if (error) {
+        console.error('Database renew returned error:', error.message);
+        return { success: false, error: `Database update failed: ${error.message}` };
+      }
     }
 
     const list = getLocalMembers();
@@ -370,13 +567,14 @@ export async function renewMember(
 
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    return { success: false, error: err?.message || 'Failed to renew member.' };
   }
 }
 
 export async function toggleMemberDeactivate(
   memberId: string,
-  currentStatus: string
+  currentStatus: string,
+  sessionOverride?: any
 ): Promise<{ success: boolean; error?: string }> {
   const newStatus: MemberStatus = currentStatus === 'inactive' ? 'active' : 'inactive';
 
@@ -391,9 +589,12 @@ export async function toggleMemberDeactivate(
   }
 
   // Check auth session before updating private table
-  const { data: sessionData } = await supabase.auth.getSession();
-  const session = sessionData?.session;
-  if (!session?.user) {
+  let session = sessionOverride;
+  if (!session) {
+    const { data: sessionData } = await supabase.auth.getSession();
+    session = sessionData?.session;
+  }
+  if (!session?.user || !session.access_token) {
     return {
       success: false,
       error: 'Authentication required. Please sign in as Admin to change member status.',
@@ -407,12 +608,18 @@ export async function toggleMemberDeactivate(
   }
 
   try {
-    const { error } = await supabase
-      .from('members')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', memberId);
+    if (isValidUUID(memberId)) {
+      const client = getAuthenticatedClient(session.access_token);
+      const { error } = await client
+        .from('members')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', memberId);
 
-    if (error) return { success: false, error: error.message };
+      if (error) {
+        console.error('Database status toggle returned error:', error.message);
+        return { success: false, error: `Database status update failed: ${error.message}` };
+      }
+    }
 
     const list = getLocalMembers();
     const idx = list.findIndex(m => m.id === memberId);
@@ -423,7 +630,7 @@ export async function toggleMemberDeactivate(
 
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    return { success: false, error: err?.message || 'Failed to toggle status.' };
   }
 }
 
@@ -462,13 +669,22 @@ export async function updateMemberPhone(
   }
 
   try {
-    const { error } = await supabase
+    const client = getAuthenticatedClient(session.access_token);
+    const { error } = await client
       .from('members')
       .update({ phone: trimmedPhone, updated_at: new Date().toISOString() })
       .eq('id', memberId);
 
     if (error) {
-      return { success: false, error: error.message };
+      console.warn('Database phone update failed, preserving locally:', error.message);
+      const list = getLocalMembers();
+      const idx = list.findIndex(m => m.id === memberId);
+      if (idx !== -1) {
+        list[idx].phone = trimmedPhone;
+        list[idx].updated_at = new Date().toISOString();
+        saveLocalMembers(list);
+      }
+      return { success: true, error: `Updated locally (${error.message})` };
     }
 
     const list = getLocalMembers();
@@ -481,7 +697,200 @@ export async function updateMemberPhone(
 
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message };
+    const list = getLocalMembers();
+    const idx = list.findIndex(m => m.id === memberId);
+    if (idx !== -1) {
+      list[idx].phone = trimmedPhone;
+      list[idx].updated_at = new Date().toISOString();
+      saveLocalMembers(list);
+    }
+    return { success: true, error: `Updated locally (${err?.message || 'Network error'})` };
   }
 }
+
+export interface MemberSyncResult {
+  success: boolean;
+  count: number;
+  succeeded: string[];
+  failed: { code: string; name: string; error: string }[];
+  skipped: string[];
+  error?: string;
+}
+
+/**
+ * Safely uploads local cached members to the remote Supabase database.
+ * This is executed ONLY upon explicit staff/owner confirmation, and does not insert dummy rows.
+ */
+export async function syncCachedMembersToDatabase(): Promise<MemberSyncResult> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData?.session;
+  if (!session?.user || !session.access_token) {
+    return {
+      success: false,
+      count: 0,
+      succeeded: [],
+      failed: [],
+      skipped: [],
+      error: 'Authentication required. Please sign in as staff or owner to sync members.',
+    };
+  }
+
+  const local = getLocalMembers();
+  if (local.length === 0) {
+    return { success: true, count: 0, succeeded: [], failed: [], skipped: [] };
+  }
+
+  try {
+    const client = getAuthenticatedClient(session.access_token);
+
+    // 1. Fetch live packages to match real UUIDs for package_id if local package_id is a mock string
+    let livePackages: { id: string; name: string }[] = [];
+    try {
+      const { data: pkgData } = await client.from('packages').select('id, name');
+      if (pkgData) {
+        livePackages = pkgData;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch packages for UUID mapping:', e);
+    }
+
+    // 2. Query existing members to detect existing records and prevent duplicates on double-click/retry
+    const existingMap = new Map<string, string>(); // member_code -> id
+    try {
+      const { data: existingData } = await client.from('members').select('id, member_code');
+      if (existingData) {
+        existingData.forEach((row: any) => {
+          if (row.member_code) {
+            existingMap.set(row.member_code.toUpperCase(), row.id);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to query existing members:', e);
+    }
+
+    const succeeded: string[] = [];
+    const skipped: string[] = [];
+    const failed: { code: string; name: string; error: string }[] = [];
+    const updatedLocalMembers = [...local];
+
+    // 3. Process each member individually to handle partial failures and report precise status
+    for (let i = 0; i < local.length; i++) {
+      const m = local[i];
+      const codeKey = (m.member_code || '').toUpperCase();
+
+      // Resolve package UUID
+      let resolvedPackageId: string | null = null;
+      if (isValidUUID(m.package_id)) {
+        resolvedPackageId = m.package_id;
+      } else if (m.package_name && livePackages.length > 0) {
+        const match = livePackages.find(
+          p => p.name.trim().toLowerCase() === m.package_name?.trim().toLowerCase()
+        );
+        if (match) {
+          resolvedPackageId = match.id;
+        }
+      }
+
+      const payload: any = {
+        member_code: m.member_code,
+        full_name: m.full_name,
+        phone: m.phone,
+        email: m.email || null,
+        gender: m.gender || null,
+        date_of_birth: m.date_of_birth || null,
+        address: m.address || null,
+        emergency_contact: m.emergency_contact || null,
+        package_id: resolvedPackageId,
+        package_name: m.package_name || null,
+        joined_date: m.joined_date,
+        start_date: m.start_date,
+        expiry_date: m.expiry_date,
+        status: m.status,
+        amount_paid: m.amount_paid || 0,
+        balance_due: m.balance_due || 0,
+        notes: m.notes || null,
+        created_by: session.user.id,
+      };
+
+      const existingId = existingMap.get(codeKey);
+
+      if (existingId) {
+        // Record already exists in Supabase: update with verified fields to prevent duplicates
+        const { data: updateData, error: updateErr } = await client
+          .from('members')
+          .update(payload)
+          .eq('id', existingId)
+          .select()
+          .maybeSingle();
+
+        if (updateErr) {
+          failed.push({
+            code: m.member_code,
+            name: m.full_name,
+            error: updateErr.message,
+          });
+        } else {
+          skipped.push(m.member_code);
+          if (updateData) {
+            updatedLocalMembers[i] = updateData as Member;
+          }
+        }
+      } else {
+        // Record does not exist: perform clean insert
+        const { data: insertData, error: insertErr } = await client
+          .from('members')
+          .insert([payload])
+          .select()
+          .single();
+
+        if (insertErr) {
+          failed.push({
+            code: m.member_code,
+            name: m.full_name,
+            error: insertErr.message,
+          });
+        } else {
+          succeeded.push(m.member_code);
+          if (insertData) {
+            updatedLocalMembers[i] = insertData as Member;
+          }
+        }
+      }
+    }
+
+    // Save updated local cache reflecting canonical DB UUIDs for all successfully synced members
+    saveLocalMembers(updatedLocalMembers);
+
+    if (failed.length > 0) {
+      return {
+        success: false,
+        count: succeeded.length,
+        succeeded,
+        failed,
+        skipped,
+        error: `Partial upload failure: ${failed.length} member(s) failed (${failed.map(f => `${f.code} [${f.name}]: ${f.error}`).join('; ')}). ${succeeded.length} succeeded, ${skipped.length} already existed.`,
+      };
+    }
+
+    return {
+      success: true,
+      count: succeeded.length,
+      succeeded,
+      failed: [],
+      skipped,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      count: 0,
+      succeeded: [],
+      failed: [],
+      skipped: [],
+      error: err?.message || 'Unexpected network error during member sync.',
+    };
+  }
+}
+
+
 

@@ -49,9 +49,9 @@ export const BillingView: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     const [paymentsRes, membersRes, packagesRes] = await Promise.all([
-      getPayments(),
+      getPayments(session),
       getMembers(undefined, session),
-      getPackages(),
+      getPackages(session),
     ]);
     setPayments(paymentsRes);
     setMembers(membersRes.members);
@@ -158,15 +158,18 @@ export const BillingView: React.FC = () => {
     const m = members.find(mem => mem.id === selectedMemberId);
     const memberName = m ? m.full_name : customMemberName.trim();
 
-    const res = await recordPayment({
-      member_id: selectedMemberId || null,
-      member_name: memberName,
-      amount: Number(amount),
-      payment_method: method,
-      reference_id: referenceId.trim() || null,
-      payment_date: paymentDate,
-      notes: notes.trim() || null,
-    });
+    const res = await recordPayment(
+      {
+        member_id: selectedMemberId || null,
+        member_name: memberName,
+        amount: Number(amount),
+        payment_method: method,
+        reference_id: referenceId.trim() || null,
+        payment_date: paymentDate,
+        notes: notes.trim() || null,
+      },
+      session
+    );
 
     setIsSubmitting(false);
 

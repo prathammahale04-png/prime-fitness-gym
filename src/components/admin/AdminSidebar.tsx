@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { AdminSection } from '../../types/database.types';
+import { SupportModal } from './SupportModal';
 import {
   LayoutDashboard,
   Users,
@@ -59,6 +60,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   onViewWebsite,
 }) => {
   const { user, profile, signOut } = useAuth();
+  const [isSupportOpen, setIsSupportOpen] = useState(false);
   const ownerEmail = profile?.email || user?.email || 'pranavsonawane1328@gmail.com';
 
   return (
@@ -112,42 +114,122 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           </div>
         </div>
 
-        {/* Navigation Items (The 11 Modules) */}
-        <div className="flex-1 overflow-y-auto py-3 px-3 space-y-1">
-          <div className="px-2 pb-1.5 text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-            Operations
+        {/* Navigation Modules grouped into logical operational tiers */}
+        <div className="flex-1 overflow-y-auto py-3 px-3 space-y-4">
+          {/* Group 1: Operations */}
+          <div className="space-y-1">
+            <div className="px-2 pb-1 text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold">
+              Daily Operations
+            </div>
+            {[
+              { id: 'overview' as const, label: 'Overview', icon: LayoutDashboard },
+              { id: 'members' as const, label: 'Members', icon: Users },
+              { id: 'reminders' as const, label: 'Expiry Reminders', icon: BellRing },
+              { id: 'checkin' as const, label: 'Check-in', icon: QrCode },
+              { id: 'enquiries' as const, label: 'Leads & Enquiries', icon: MessageSquare },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = currentSection === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onSelectSection(item.id);
+                    onCloseMobile();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
+                    isActive
+                      ? 'bg-[#f36b22] text-white font-bold shadow-md shadow-[#f36b22]/20'
+                      : 'text-neutral-300 hover:text-white hover:bg-[#181a22]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-neutral-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentSection === item.id;
+          {/* Group 2: Management & Coaching */}
+          <div className="space-y-1">
+            <div className="px-2 pb-1 text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold">
+              Gym Management
+            </div>
+            {[
+              { id: 'packages' as const, label: 'Packages', icon: Layers },
+              { id: 'billing' as const, label: 'Billing & Sales', icon: CreditCard },
+              { id: 'trainers' as const, label: 'Trainers Roster', icon: UserCheck, badge: 'Staff' },
+              { id: 'events' as const, label: 'Events & Workshops', icon: Calendar },
+              { id: 'challenges' as const, label: 'Challenges', icon: Trophy },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = currentSection === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onSelectSection(item.id);
+                    onCloseMobile();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
+                    isActive
+                      ? 'bg-[#f36b22] text-white font-bold shadow-md shadow-[#f36b22]/20'
+                      : 'text-neutral-300 hover:text-white hover:bg-[#181a22]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-neutral-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-[#f36b22]/20 text-[#f36b22] border border-[#f36b22]/40 font-bold">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  onSelectSection(item.id);
-                  onCloseMobile();
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
-                  isActive
-                    ? 'bg-[#f36b22] text-white font-bold shadow-md shadow-[#f36b22]/20'
-                    : 'text-neutral-300 hover:text-white hover:bg-[#181a22]'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-neutral-400'}`} />
-                  <span>{item.label}</span>
-                </div>
-
-                {item.badge && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/30 text-white">
-                    {item.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {/* Group 3: Platform & Analytics */}
+          <div className="space-y-1">
+            <div className="px-2 pb-1 text-[10px] font-mono uppercase tracking-wider text-neutral-500 font-semibold">
+              Institution & System
+            </div>
+            {[
+              { id: 'analytics' as const, label: 'Analytics', icon: BarChart3 },
+              { id: 'settings' as const, label: 'Gym Settings', icon: Settings, badge: 'Profile' },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = currentSection === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onSelectSection(item.id);
+                    onCloseMobile();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
+                    isActive
+                      ? 'bg-[#f36b22] text-white font-bold shadow-md shadow-[#f36b22]/20'
+                      : 'text-neutral-300 hover:text-white hover:bg-[#181a22]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-neutral-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-300 border border-neutral-700 font-bold">
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Bottom Actions: View Website, Support, Sign out */}
@@ -163,7 +245,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           )}
 
           <button
-            onClick={() => alert('Prime Fitness MH19 Support Desk: +91 98220 12345 (Shivaji Nagar, Jalgaon)')}
+            onClick={() => setIsSupportOpen(true)}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-neutral-400 hover:text-white hover:bg-[#181a22] rounded-lg transition-colors cursor-pointer"
           >
             <Headphones className="w-4 h-4 text-neutral-400" />
@@ -179,6 +261,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           </button>
         </div>
       </aside>
+
+      {/* Support Desk Modal */}
+      <SupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
     </>
   );
 };

@@ -117,6 +117,8 @@ export interface Challenge {
 export interface GymSettings {
   id: string;
   gym_name: string;
+  brand_slogan?: string;
+  public_slug?: string;
   city: string;
   phone: string;
   email: string;
@@ -124,6 +126,8 @@ export interface GymSettings {
   timings: string;
   facility_size: string;
   disciplines: string;
+  logo_url?: string;
+  banner_url?: string;
   announcements?: string;
   updated_at?: string;
 }

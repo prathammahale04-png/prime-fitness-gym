@@ -31,7 +31,7 @@ export const CheckInView: React.FC = () => {
     setLoading(true);
     const [mRes, cRes] = await Promise.all([
       getMembers(undefined, session),
-      getCheckIns(),
+      getCheckIns(session),
     ]);
     setMembers(mRes.members);
     setCheckins(cRes);
@@ -43,6 +43,12 @@ export const CheckInView: React.FC = () => {
       loadData();
     }
   }, [authLoading, session?.user?.id]);
+
+  // Today's date in YYYY-MM-DD
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayCheckIns = useMemo(() => {
+    return checkins.filter(c => c.checked_in_at.startsWith(todayStr));
+  }, [checkins, todayStr]);
 
   // Search logic for instant auto-complete
   const searchResults = useMemo(() => {
@@ -62,12 +68,28 @@ export const CheckInView: React.FC = () => {
     setSuccessNotice(null);
   };
 
-  const handleConfirmCheckIn = async (override: boolean = false) => {
+  // Detect if selected member has already checked in on the same date
+  const alreadyCheckedInToday = useMemo(() => {
+    if (!matchedMember) return null;
+    return checkins.find(
+      c =>
+        c.checked_in_at.startsWith(todayStr) &&
+        (c.member_id === matchedMember.id || c.member_code === matchedMember.member_code)
+    );
+  }, [matchedMember, checkins, todayStr]);
+
+  const handleConfirmCheckIn = async (override: boolean = false, isSecondSession: boolean = false) => {
     if (!matchedMember) return;
 
     setIsSubmitting(true);
-    const note = override ? 'Expired Membership Override Approval' : 'Daily Entrance Verification';
-    const res = await recordCheckIn(matchedMember, note);
+    let note = 'Daily Entrance Verification';
+    if (isSecondSession) {
+      note = 'Second Workout of Day (Duplicate Approved)';
+    } else if (override) {
+      note = 'Expired Membership Override Approval';
+    }
+
+    const res = await recordCheckIn(matchedMember, note, session);
     setIsSubmitting(false);
 
     if (res.success) {
@@ -77,12 +99,6 @@ export const CheckInView: React.FC = () => {
       setTimeout(() => setSuccessNotice(null), 4000);
     }
   };
-
-  // Stats today
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayCheckIns = useMemo(() => {
-    return checkins.filter(c => c.checked_in_at.startsWith(todayStr));
-  }, [checkins, todayStr]);
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 space-y-6">
@@ -215,19 +231,51 @@ export const CheckInView: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-3 pt-2">
+                {/* Duplicate Check-in Notice */}
+                {alreadyCheckedInToday && (
+                  <div className="p-3 bg-amber-500/15 border border-amber-500/40 rounded-lg text-xs text-amber-300 flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block text-white">Already Checked In Today</span>
+                      <p className="text-[11px] text-amber-200/90 leading-relaxed mt-0.5">
+                        Logged today at {new Date(alreadyCheckedInToday.checked_in_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} ({alreadyCheckedInToday.notes || 'Workout Session'}).
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
                   <button
-                    onClick={() => handleConfirmCheckIn(matchedMember.status === 'expired')}
+                    onClick={() =>
+                      handleConfirmCheckIn(
+                        matchedMember.status === 'expired',
+                        Boolean(alreadyCheckedInToday)
+                      )
+                    }
                     disabled={isSubmitting}
-                    className="flex-1 py-3 bg-[#f36b22] hover:bg-[#d95614] text-white font-headline font-black uppercase text-xs tracking-wider rounded-lg transition-colors cursor-pointer shadow-lg shadow-[#f36b22]/20 flex items-center justify-center gap-2"
+                    className={`w-full sm:flex-1 py-3 text-white font-headline font-black uppercase text-xs tracking-wider rounded-lg transition-colors cursor-pointer shadow-lg flex items-center justify-center gap-2 ${
+                      alreadyCheckedInToday
+                        ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                        : matchedMember.status === 'expired'
+                        ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
+                        : 'bg-[#f36b22] hover:bg-[#d95614] shadow-[#f36b22]/20'
+                    }`}
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>{isSubmitting ? 'Verifying...' : 'Confirm Check-in'}</span>
+                    <span>
+                      {isSubmitting
+                        ? 'Verifying...'
+                        : alreadyCheckedInToday
+                        ? 'Log 2nd Workout Today (Pass Duplicate)'
+                        : matchedMember.status === 'expired'
+                        ? 'Override & Approve Expired Entry'
+                        : 'Confirm Check-in'}
+                    </span>
                   </button>
 
                   <button
                     onClick={() => setMatchedMember(null)}
-                    className="px-4 py-3 border border-neutral-700 rounded-lg text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                    className="w-full sm:w-auto px-4 py-3 border border-neutral-700 rounded-lg text-xs text-neutral-400 hover:text-white transition-colors cursor-pointer"
                   >
                     Clear
                   </button>

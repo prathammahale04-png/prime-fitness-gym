@@ -23,6 +23,8 @@ import {
   ArrowRight,
   ShieldCheck,
   ChevronRight,
+  UserCheck,
+  Settings,
 } from 'lucide-react';
 
 interface OverviewViewProps {
@@ -225,6 +227,22 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
           >
             <Plus className="w-3.5 h-3.5 text-purple-400" />
             <span>New Lead</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateSection && onNavigateSection('trainers')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1e222d] hover:bg-[#282d3b] text-white text-xs font-semibold rounded-lg border border-neutral-700 transition-colors cursor-pointer"
+          >
+            <UserCheck className="w-3.5 h-3.5 text-amber-400" />
+            <span>Coaching Staff</span>
+          </button>
+
+          <button
+            onClick={() => onNavigateSection && onNavigateSection('settings')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1e222d] hover:bg-[#282d3b] text-white text-xs font-semibold rounded-lg border border-neutral-700 transition-colors cursor-pointer"
+          >
+            <Settings className="w-3.5 h-3.5 text-neutral-300" />
+            <span>Gym Settings</span>
           </button>
         </div>
       </div>

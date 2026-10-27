@@ -296,15 +296,20 @@ async function applyPaymentToMember(memberId: string, amount: number) {
 /* =========================================================================
    PAYMENTS & BILLING
 ========================================================================= */
-export async function getPayments(): Promise<PaymentRecord[]> {
+export async function getPayments(sessionOverride?: any): Promise<PaymentRecord[]> {
   if (isSupabaseConfigured()) {
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session?.user) {
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+      if (!session?.user) {
         return getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
       }
 
-      const { data, error } = await supabase
+      const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
+      const { data, error } = await client
         .from('payments')
         .select('*')
         .order('created_at', { ascending: false });
@@ -323,15 +328,18 @@ export async function getPayments(): Promise<PaymentRecord[]> {
   return getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
 }
 
-export async function recordPayment(payment: {
-  member_id: string | null;
-  member_name: string;
-  amount: number;
-  payment_method: 'cash' | 'upi' | 'card' | 'bank_transfer';
-  reference_id: string | null;
-  payment_date: string;
-  notes: string | null;
-}): Promise<{ success: boolean; data?: PaymentRecord; isLive: boolean; error?: string }> {
+export async function recordPayment(
+  payment: {
+    member_id: string | null;
+    member_name: string;
+    amount: number;
+    payment_method: 'cash' | 'upi' | 'card' | 'bank_transfer';
+    reference_id: string | null;
+    payment_date: string;
+    notes: string | null;
+  },
+  sessionOverride?: any
+): Promise<{ success: boolean; data?: PaymentRecord; isLive: boolean; error?: string }> {
   // Guaranteed collision-free unique receipt number
   const yyyymm = `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
   const receiptNumber = `REC-${yyyymm}-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`;
@@ -345,8 +353,12 @@ export async function recordPayment(payment: {
 
   if (isSupabaseConfigured()) {
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session?.user) {
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+      if (!session?.user) {
         // Not authenticated, save to local storage cache without querying private table
         const local = getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
         local.unshift(localPayload);
@@ -366,7 +378,8 @@ export async function recordPayment(payment: {
         notes: payment.notes || null,
       };
 
-      const { data, error } = await supabase
+      const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
+      const { data, error } = await client
         .from('payments')
         .insert([dbInsertPayload])
         .select()
@@ -412,10 +425,16 @@ export async function recordPayment(payment: {
 /* =========================================================================
    CHECK-INS & ATTENDANCE
 ========================================================================= */
-export async function getCheckIns(): Promise<CheckInRecord[]> {
+export async function getCheckIns(sessionOverride?: any): Promise<CheckInRecord[]> {
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
+      const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
+      const { data, error } = await client
         .from('checkins')
         .select('*')
         .order('checked_in_at', { ascending: false });
@@ -440,7 +459,8 @@ export async function recordCheckIn(
     full_name: string;
     status: string;
   },
-  notes: string = ''
+  notes: string = '',
+  sessionOverride?: any
 ): Promise<{ success: boolean; data?: CheckInRecord; isLive: boolean; error?: string }> {
   const status: 'valid' | 'expired_override' | 'guest' =
     member.status === 'expired' ? 'expired_override' : 'valid';
@@ -457,6 +477,11 @@ export async function recordCheckIn(
 
   if (isSupabaseConfigured()) {
     try {
+      let session = sessionOverride;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session;
+      }
       // Omit client-generated ID so PostgreSQL generates genuine UUID
       const dbInsertPayload = {
         member_id: isValidUUID(member.id) ? member.id : null,
@@ -467,7 +492,8 @@ export async function recordCheckIn(
         notes: notes || (status === 'expired_override' ? 'Expired Membership Pass' : 'Regular Workout'),
       };
 
-      const { data, error } = await supabase
+      const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
+      const { data, error } = await client
         .from('checkins')
         .insert([dbInsertPayload])
         .select()
@@ -878,35 +904,185 @@ export async function saveChallenge(challenge: Omit<FitnessChallengeRecord, 'id'
 }
 
 /* =========================================================================
-   TRAINERS
+   TRAINERS (AUTHENTICATED CRUD ON BASE TABLE public.trainers)
 ========================================================================= */
 export async function getTrainers(): Promise<TrainerRecord[]> {
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase.from('trainers').select('*').order('name', { ascending: true });
-      if (!error && data !== null) return data as TrainerRecord[];
-    } catch (e) {}
+      const { data: sessionData } = await supabase.auth.getSession();
+      const client = sessionData?.session?.access_token
+        ? getAuthenticatedClient(sessionData.session.access_token)
+        : supabase;
+
+      const { data, error } = await client
+        .from('trainers')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!error && data !== null && data.length > 0) {
+        return data as TrainerRecord[];
+      }
+
+      // If user is unauthenticated or base table query is restricted, fallback to public projection view
+      const { data: pubData, error: pubErr } = await supabase
+        .from('public_trainers')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (!pubErr && pubData !== null && pubData.length > 0) {
+        return pubData.map((p: any) => ({
+          ...p,
+          phone: p.phone || '+91 94222 19019',
+          email: p.email || 'primefitnessjalgaon@gmail.com',
+          active_members_count: p.active_members_count || 0,
+          is_active: true,
+        })) as TrainerRecord[];
+      }
+    } catch (e) {
+      console.warn('Trainers fetch fallback:', e);
+    }
   }
   return getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
 }
 
-export async function saveTrainer(trainer: Omit<TrainerRecord, 'id'>): Promise<{ success: boolean; data: TrainerRecord; isLive: boolean }> {
+export async function saveTrainer(
+  trainer: Omit<TrainerRecord, 'id'>
+): Promise<{ success: boolean; data: TrainerRecord; isLive: boolean; error?: string }> {
+  const localPayload: TrainerRecord = {
+    ...trainer,
+    id: 'trn-local-' + Date.now(),
+    created_at: new Date().toISOString(),
+  };
+
   if (isSupabaseConfigured()) {
     try {
-      const { data, error } = await supabase.from('trainers').insert([trainer]).select().single();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const client = sessionData?.session?.access_token
+        ? getAuthenticatedClient(sessionData.session.access_token)
+        : supabase;
+
+      // CRITICAL: Mutations MUST strictly target base table public.trainers, NEVER the view
+      const { data, error } = await client
+        .from('trainers')
+        .insert([{
+          name: trainer.name.trim(),
+          role: trainer.role.trim(),
+          specialty: trainer.specialty.trim(),
+          phone: trainer.phone ? trainer.phone.trim() : '+91 94222 19019',
+          email: trainer.email ? trainer.email.trim() : 'coach@primefitness.in',
+          active_members_count: Number(trainer.active_members_count) || 0,
+          is_active: trainer.is_active ?? true,
+          bio: trainer.bio ? trainer.bio.trim() : null,
+          created_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
       if (!error && data) {
         const local = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
         local.unshift(data as TrainerRecord);
         setStored(STORAGE_KEYS.TRAINERS, local);
         return { success: true, data: data as TrainerRecord, isLive: true };
       }
-    } catch (e) {}
+      if (error) {
+        console.error('Supabase trainers insert error:', error.message);
+        return { success: false, data: localPayload, isLive: false, error: error.message };
+      }
+    } catch (e: any) {
+      console.warn('Supabase saveTrainer exception:', e);
+      return { success: false, data: localPayload, isLive: false, error: e?.message };
+    }
   }
-  const payload: TrainerRecord = { ...trainer, id: 'trn-' + Date.now() };
+
   const local = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
-  local.unshift(payload);
+  local.unshift(localPayload);
   setStored(STORAGE_KEYS.TRAINERS, local);
-  return { success: true, data: payload, isLive: false };
+  return { success: true, data: localPayload, isLive: false };
+}
+
+export async function updateTrainer(
+  id: string,
+  updates: Partial<TrainerRecord>
+): Promise<{ success: boolean; data?: TrainerRecord; error?: string }> {
+  // Update local cache
+  const local = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
+  const idx = local.findIndex((t) => t.id === id);
+  let updatedRecord: TrainerRecord | undefined;
+  if (idx !== -1) {
+    local[idx] = { ...local[idx], ...updates };
+    updatedRecord = local[idx];
+    setStored(STORAGE_KEYS.TRAINERS, local);
+  }
+
+  if (isSupabaseConfigured() && isValidUUID(id)) {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const client = sessionData?.session?.access_token
+        ? getAuthenticatedClient(sessionData.session.access_token)
+        : supabase;
+
+      const dbUpdates: any = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name.trim();
+      if (updates.role !== undefined) dbUpdates.role = updates.role.trim();
+      if (updates.specialty !== undefined) dbUpdates.specialty = updates.specialty.trim();
+      if (updates.phone !== undefined) dbUpdates.phone = updates.phone.trim();
+      if (updates.email !== undefined) dbUpdates.email = updates.email.trim();
+      if (updates.active_members_count !== undefined) dbUpdates.active_members_count = Number(updates.active_members_count);
+      if (updates.is_active !== undefined) dbUpdates.is_active = updates.is_active;
+      if (updates.bio !== undefined) dbUpdates.bio = updates.bio ? updates.bio.trim() : null;
+
+      const { data, error } = await client
+        .from('trainers')
+        .update(dbUpdates)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        if (idx !== -1) {
+          local[idx] = data as TrainerRecord;
+          setStored(STORAGE_KEYS.TRAINERS, local);
+        }
+        return { success: true, data: data as TrainerRecord };
+      }
+      if (error) {
+        console.error('Supabase trainers update error:', error.message);
+        return { success: false, error: error.message };
+      }
+    } catch (e: any) {
+      console.warn('Supabase updateTrainer exception:', e);
+      return { success: false, error: e?.message };
+    }
+  }
+
+  return { success: true, data: updatedRecord };
+}
+
+export async function deleteTrainer(id: string): Promise<{ success: boolean; error?: string }> {
+  // Update local cache
+  const local = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
+  const filtered = local.filter((t) => t.id !== id);
+  setStored(STORAGE_KEYS.TRAINERS, filtered);
+
+  if (isSupabaseConfigured() && isValidUUID(id)) {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const client = sessionData?.session?.access_token
+        ? getAuthenticatedClient(sessionData.session.access_token)
+        : supabase;
+
+      const { error } = await client.from('trainers').delete().eq('id', id);
+      if (error) {
+        console.error('Supabase trainers delete error:', error.message);
+        return { success: false, error: error.message };
+      }
+    } catch (e: any) {
+      console.warn('Supabase deleteTrainer exception:', e);
+      return { success: false, error: e?.message };
+    }
+  }
+
+  return { success: true };
 }
 
 /* =========================================================================

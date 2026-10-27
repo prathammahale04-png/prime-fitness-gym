@@ -156,4 +156,6 @@ export interface TrainerRecord {
   active_members_count: number;
   is_active: boolean;
   bio?: string;
+  image_url?: string;
+  created_at?: string;
 }

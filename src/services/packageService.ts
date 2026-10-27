@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import { MembershipPackage } from '../types/database.types';
 
 export const DEFAULT_PACKAGES: MembershipPackage[] = [
@@ -48,13 +48,25 @@ export const DEFAULT_PACKAGES: MembershipPackage[] = [
   },
 ];
 
-export async function getPackages(): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+async function getClient(sessionOverride?: any) {
+  if (sessionOverride?.access_token) {
+    return getAuthenticatedClient(sessionOverride.access_token);
+  }
+  const { data } = await supabase.auth.getSession();
+  if (data?.session?.access_token) {
+    return getAuthenticatedClient(data.session.access_token);
+  }
+  return supabase;
+}
+
+export async function getPackages(sessionOverride?: any): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
   if (!isSupabaseConfigured()) {
     return { packages: DEFAULT_PACKAGES, isLive: false };
   }
 
   try {
-    const { data, error } = await supabase
+    const client = await getClient(sessionOverride);
+    const { data, error } = await client
       .from('packages')
       .select('*')
       .order('price', { ascending: true });
@@ -75,13 +87,17 @@ export async function getPackages(): Promise<{ packages: MembershipPackage[]; is
   }
 }
 
-export async function createPackage(pkg: Omit<MembershipPackage, 'id' | 'created_at'>): Promise<{ success: boolean; data?: MembershipPackage; error?: string }> {
+export async function createPackage(
+  pkg: Omit<MembershipPackage, 'id' | 'created_at'>,
+  sessionOverride?: any
+): Promise<{ success: boolean; data?: MembershipPackage; error?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: 'Database not configured in environment variables.' };
   }
 
   try {
-    const { data, error } = await supabase
+    const client = await getClient(sessionOverride);
+    const { data, error } = await client
       .from('packages')
       .insert([pkg])
       .select()
@@ -96,14 +112,16 @@ export async function createPackage(pkg: Omit<MembershipPackage, 'id' | 'created
 
 export async function updatePackage(
   id: string,
-  updates: Partial<Omit<MembershipPackage, 'id' | 'created_at'>>
+  updates: Partial<Omit<MembershipPackage, 'id' | 'created_at'>>,
+  sessionOverride?: any
 ): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: 'Database not configured in environment variables.' };
   }
 
   try {
-    const { error } = await supabase
+    const client = await getClient(sessionOverride);
+    const { error } = await client
       .from('packages')
       .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -115,6 +133,10 @@ export async function updatePackage(
   }
 }
 
-export async function togglePackageActive(id: string, currentStatus: boolean): Promise<{ success: boolean; error?: string }> {
-  return updatePackage(id, { is_active: !currentStatus });
+export async function togglePackageActive(
+  id: string,
+  currentStatus: boolean,
+  sessionOverride?: any
+): Promise<{ success: boolean; error?: string }> {
+  return updatePackage(id, { is_active: !currentStatus }, sessionOverride);
 }

@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import {
   Member,
   Package,
@@ -192,6 +192,8 @@ const INITIAL_CHECKINS: CheckIn[] = [
 const INITIAL_SETTINGS: GymSettings = {
   id: 'prime_fitness_main',
   gym_name: 'Prime Fitness MH19',
+  brand_slogan: 'BECOME THE BEST VERSION OF YOU THE PRIME VERSION',
+  public_slug: 'primefitnessmh19',
   city: PRIME_GYM_DATA.city,
   phone: PRIME_GYM_DATA.phone,
   email: PRIME_GYM_DATA.email,
@@ -199,6 +201,8 @@ const INITIAL_SETTINGS: GymSettings = {
   timings: PRIME_GYM_DATA.timings,
   facility_size: PRIME_GYM_DATA.facilitySize,
   disciplines: PRIME_GYM_DATA.disciplines,
+  logo_url: '',
+  banner_url: '',
   announcements: 'Morning slot batch 6:00 AM - 7:30 AM currently operating at peak energy. Powerlifting deadlift platforms reserved for evening workshop this Saturday.',
 };
 
@@ -763,11 +767,16 @@ export const GymService = {
   async getSettings(): Promise<GymSettings> {
     if (isSupabaseConfigured()) {
       try {
-        const { data, error } = await supabase.from('gym_settings').select('*').eq('id', 'prime_fitness_main').maybeSingle();
+        const { data: sessionData } = await supabase.auth.getSession();
+        const client = sessionData?.session?.access_token
+          ? getAuthenticatedClient(sessionData.session.access_token)
+          : supabase;
+
+        const { data, error } = await client.from('gym_settings').select('*').eq('id', 'prime_fitness_main').maybeSingle();
         if (!error && data) {
           return data as GymSettings;
         }
-        // Fallback to public projection view if base table is restricted to staff/owners
+        // Fallback to read-only public projection view if base table is restricted to authenticated users
         const { data: pubData, error: pubErr } = await supabase.from('public_gym_settings').select('*').eq('id', 'prime_fitness_main').maybeSingle();
         if (!pubErr && pubData) {
           return pubData as GymSettings;
@@ -784,15 +793,44 @@ export const GymService = {
     const updated: GymSettings = {
       ...current,
       ...settings,
+      id: 'prime_fitness_main',
       updated_at: new Date().toISOString(),
     };
     setStore('settings', updated);
 
     if (isSupabaseConfigured()) {
       try {
-        await supabase.from('gym_settings').upsert(updated);
-      } catch (e) {
-        console.warn('Supabase settings update error:', e);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const client = sessionData?.session?.access_token
+          ? getAuthenticatedClient(sessionData.session.access_token)
+          : supabase;
+
+        // CRITICAL: Mutations MUST strictly target the base table public.gym_settings, NEVER the view
+        const { error } = await client.from('gym_settings').upsert({
+          id: 'prime_fitness_main',
+          gym_name: updated.gym_name,
+          brand_slogan: updated.brand_slogan || 'BECOME THE BEST VERSION OF YOU THE PRIME VERSION',
+          public_slug: updated.public_slug || 'primefitnessmh19',
+          city: updated.city || 'Jalgaon',
+          phone: updated.phone,
+          email: updated.email,
+          address: updated.address,
+          timings: updated.timings,
+          facility_size: updated.facility_size || '4000+ SQ.FT.',
+          disciplines: updated.disciplines || 'Strength · Cardio · HYROX · Powerlifting',
+          logo_url: updated.logo_url || null,
+          banner_url: updated.banner_url || null,
+          announcements: updated.announcements || null,
+          updated_at: updated.updated_at,
+        });
+
+        if (error) {
+          console.error('Supabase gym_settings update error:', error.message);
+          throw new Error(error.message);
+        }
+      } catch (e: any) {
+        console.warn('Supabase gym_settings update error:', e);
+        throw e;
       }
     }
     return updated;

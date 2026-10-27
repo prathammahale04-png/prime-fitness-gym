@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import { MembershipPackage, PackageDurationType } from '../../types/database.types';
 import { getPackages, createPackage, togglePackageActive, updatePackage } from '../../services/packageService';
 import {
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 
 export const PackagesView: React.FC = () => {
+  const { session, loading: authLoading } = useAuth();
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
@@ -33,15 +35,17 @@ export const PackagesView: React.FC = () => {
 
   const loadPackages = async () => {
     setLoading(true);
-    const res = await getPackages();
+    const res = await getPackages(session);
     setPackages(res.packages);
     setIsLive(res.isLive);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadPackages();
-  }, []);
+    if (!authLoading) {
+      loadPackages();
+    }
+  }, [authLoading, session?.user?.id]);
 
   const handleOpenAdd = () => {
     setEditingPkg(null);
@@ -91,14 +95,18 @@ export const PackagesView: React.FC = () => {
       .filter(Boolean);
 
     if (editingPkg) {
-      const res = await updatePackage(editingPkg.id, {
-        name: name.trim(),
-        duration_type: durationType,
-        duration_days: Number(durationDays),
-        price: Number(price),
-        description: description.trim() || null,
-        features,
-      });
+      const res = await updatePackage(
+        editingPkg.id,
+        {
+          name: name.trim(),
+          duration_type: durationType,
+          duration_days: Number(durationDays),
+          price: Number(price),
+          description: description.trim() || null,
+          features,
+        },
+        session
+      );
 
       if (!res.success) {
         setErrorMsg(res.error || 'Failed to update package.');
@@ -107,15 +115,18 @@ export const PackagesView: React.FC = () => {
         await loadPackages();
       }
     } else {
-      const res = await createPackage({
-        name: name.trim(),
-        duration_type: durationType,
-        duration_days: Number(durationDays),
-        price: Number(price),
-        description: description.trim() || null,
-        features,
-        is_active: true,
-      });
+      const res = await createPackage(
+        {
+          name: name.trim(),
+          duration_type: durationType,
+          duration_days: Number(durationDays),
+          price: Number(price),
+          description: description.trim() || null,
+          features,
+          is_active: true,
+        },
+        session
+      );
 
       if (!res.success) {
         setErrorMsg(res.error || 'Failed to create package.');
@@ -128,7 +139,7 @@ export const PackagesView: React.FC = () => {
   };
 
   const handleToggle = async (pkg: MembershipPackage) => {
-    await togglePackageActive(pkg.id, pkg.is_active);
+    await togglePackageActive(pkg.id, pkg.is_active, session);
     await loadPackages();
   };
 

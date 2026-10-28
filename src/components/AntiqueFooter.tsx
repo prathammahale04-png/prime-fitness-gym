@@ -1,5 +1,7 @@
 import React from 'react';
 import { PRIME_GYM_DATA } from '../data/primeGymData';
+import { useGsapAnimation } from '../hooks/useGsapAnimation';
+import { gsap } from '../utils/gsapSetup';
 
 interface AntiqueFooterProps {
   onNavigate: (id: string) => void;
@@ -7,9 +9,24 @@ interface AntiqueFooterProps {
 }
 
 export const AntiqueFooter: React.FC<AntiqueFooterProps> = ({ onNavigate, onOpenStaffPortal }) => {
+  const footerRef = useGsapAnimation<HTMLElement>((_ctx) => {
+
+    gsap.from('.footer-content-wrap', {
+      scrollTrigger: {
+        trigger: footerRef.current,
+        start: 'top 95%',
+        toggleActions: 'play none none none',
+      },
+      opacity: 0,
+      y: 20,
+      duration: 0.8,
+      ease: 'power2.out',
+    });
+  });
+
   return (
-    <footer className="bg-white border-t border-neutral-100 py-12 text-xs text-neutral-500">
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
+    <footer ref={footerRef} className="bg-white border-t border-neutral-100 py-12 text-xs text-neutral-500 relative">
+      <div className="footer-content-wrap max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 flex flex-col sm:flex-row items-center justify-between gap-6 text-center sm:text-left">
         <div className="flex items-center gap-3">
           <div className="w-6 h-6 flex items-center justify-center text-[#f36b22] shrink-0">
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
@@ -33,6 +50,12 @@ export const AntiqueFooter: React.FC<AntiqueFooterProps> = ({ onNavigate, onOpen
             className="hover:text-[#f36b22] transition-colors cursor-pointer"
           >
             ABOUT
+          </button>
+          <button
+            onClick={() => onNavigate('facility')}
+            className="hover:text-[#f36b22] transition-colors cursor-pointer"
+          >
+            FACILITY
           </button>
           <button
             onClick={() => onNavigate('trainers')}

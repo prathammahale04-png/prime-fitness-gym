@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AntiqueHeader } from './components/AntiqueHeader';
 import { AntiqueHero } from './components/AntiqueHero';
 import { AntiqueArtOfBody } from './components/AntiqueArtOfBody';
+import { AntiqueFacilityStory } from './components/AntiqueFacilityStory';
 import { AntiqueTrainers } from './components/AntiqueTrainers';
 import { AntiquePrices } from './components/AntiquePrices';
 import { AntiqueJoinContact } from './components/AntiqueJoinContact';
@@ -107,26 +108,30 @@ function AppContent() {
   // 1. Owner & Staff Login View
   if (currentView === 'login') {
     return (
-      <AdminLoginPage
-        onBackToWebsite={() => navigateTo('public')}
-        onLoginSuccess={() => navigateTo('admin')}
-      />
+      <div className="animate-view-fade min-h-screen">
+        <AdminLoginPage
+          onBackToWebsite={() => navigateTo('public')}
+          onLoginSuccess={() => navigateTo('admin')}
+        />
+      </div>
     );
   }
 
   // 2. Protected Admin Dashboard View
   if (currentView === 'admin' && user) {
     return (
-      <AdminDashboardLayout
-        onViewWebsite={() => navigateTo('public')}
-      />
+      <div className="animate-view-fade min-h-screen">
+        <AdminDashboardLayout
+          onViewWebsite={() => navigateTo('public')}
+        />
+      </div>
     );
   }
 
   // 3. Public Gym Website (Exact Working Design Preserved)
   return (
-    <div className="min-h-screen bg-white text-neutral-900 flex flex-col font-sans selection:bg-[#f36b22] selection:text-white">
-      {/* Header: Spartan Helmet + PRIME FITNESS, Nav: ABOUT · TRAINERS · PRICES · CONTACTS */}
+    <div className="animate-view-fade min-h-screen bg-white text-neutral-900 flex flex-col font-sans selection:bg-[#f36b22] selection:text-white">
+      {/* Header: Spartan Helmet + PRIME FITNESS, Nav: ABOUT · FACILITY · TRAINERS · PRICES · CONTACTS */}
       <AntiqueHeader
         onNavigate={scrollTo}
         onOpenJoin={handleOpenJoin}
@@ -144,7 +149,12 @@ function AppContent() {
           onLearnMore={() => scrollTo('prices')}
         />
 
-        {/* Section 3: "WE ARE HERE TO GUIDE YOU" (Solid black background, 5 trainers, orange highlighted card) */}
+        {/* Section 3: "THE PROVING GROUND" (Horizontal scroll storytelling of 4 training zones) */}
+        <AntiqueFacilityStory
+          onClaimPass={handleOpenJoin}
+        />
+
+        {/* Section 4: "WE ARE HERE TO GUIDE YOU" (Solid black background, 5 trainers, orange highlighted card) */}
         <AntiqueTrainers />
 
         {/* Section 4: "OUR PRICES" (4 vertical pricing cards, 3-months highlighted in orange border) */}

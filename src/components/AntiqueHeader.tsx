@@ -76,13 +76,19 @@ export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpen
             </div>
           </a>
 
-          {/* Right Navigation: ABOUT · TRAINERS · PRICES · CONTACTS */}
-          <nav className="hidden md:flex items-center gap-10">
+          {/* Right Navigation: ABOUT · FACILITY · TRAINERS · PRICES · CONTACTS */}
+          <nav className="hidden md:flex items-center gap-8 lg:gap-10">
             <button
               onClick={() => handleLinkClick('about')}
               className="text-xs font-headline font-bold uppercase tracking-[0.2em] text-neutral-800 hover:text-[#f36b22] transition-colors cursor-pointer"
             >
               ABOUT
+            </button>
+            <button
+              onClick={() => handleLinkClick('facility')}
+              className="text-xs font-headline font-bold uppercase tracking-[0.2em] text-neutral-800 hover:text-[#f36b22] transition-colors cursor-pointer"
+            >
+              FACILITY
             </button>
             <button
               onClick={() => handleLinkClick('trainers')}
@@ -108,7 +114,7 @@ export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpen
           <div className="flex items-center gap-4">
             <button
               onClick={onOpenJoin}
-              className="hidden sm:inline-block px-5 py-2 text-xs font-headline font-bold uppercase tracking-[0.18em] text-white bg-[#f36b22] hover:bg-[#d95614] rounded-none transition-colors cursor-pointer"
+              className="hidden sm:inline-block px-5 py-2 text-xs font-headline font-bold uppercase tracking-[0.18em] text-white bg-[#f36b22] hover:bg-[#d95614] rounded-none transition-colors cursor-pointer shadow-sm"
             >
               JOIN NOW
             </button>
@@ -127,12 +133,18 @@ export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpen
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-40 bg-white md:hidden pt-24 px-8 flex flex-col justify-between pb-10">
-          <nav className="flex flex-col gap-8 pt-6">
+          <nav className="flex flex-col gap-6 pt-6">
             <button
               onClick={() => handleLinkClick('about')}
               className="text-left text-sm font-headline font-bold uppercase tracking-[0.2em] text-neutral-900 hover:text-[#f36b22] py-2 border-b border-neutral-100"
             >
               ABOUT
+            </button>
+            <button
+              onClick={() => handleLinkClick('facility')}
+              className="text-left text-sm font-headline font-bold uppercase tracking-[0.2em] text-neutral-900 hover:text-[#f36b22] py-2 border-b border-neutral-100"
+            >
+              FACILITY
             </button>
             <button
               onClick={() => handleLinkClick('trainers')}

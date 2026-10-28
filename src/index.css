@@ -6,11 +6,30 @@
   --font-body: 'Montserrat', 'Plus Jakarta Sans', sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   font-family: 'Montserrat', 'Plus Jakarta Sans', sans-serif;
   background-color: #ffffff;
   color: #171717;
   overflow-x: hidden;
+}
+
+@keyframes fadeInPage {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-view-fade {
+  animation: fadeInPage 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .font-headline {

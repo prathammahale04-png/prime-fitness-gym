@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { TRAINERS, Trainer } from '../data/primeGymData';
 import { X, Award, ChevronRight } from 'lucide-react';
+import { useGsapAnimation } from '../hooks/useGsapAnimation';
+import { gsap } from '../utils/gsapSetup';
 
 interface AntiqueTrainersProps {
   onSelectTrainer?: (trainer: Trainer) => void;
@@ -10,6 +12,44 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
   // Default selected is Sara Cavil (index 1), matching the reference mockup!
   const [selectedTrainerId, setSelectedTrainerId] = useState<string>('trainer-2');
   const [activeMobileModal, setActiveMobileModal] = useState<Trainer | null>(null);
+
+  const sectionRef = useGsapAnimation<HTMLElement>((_ctx) => {
+    // 1. Heading line reveal
+    gsap.fromTo(
+      '.trainer-title-line',
+      { yPercent: 110, opacity: 0 },
+      {
+        yPercent: 0,
+        opacity: 1,
+        duration: 1.0,
+        stagger: 0.12,
+        ease: 'power4.out',
+        scrollTrigger: {
+          trigger: '#trainers',
+          start: 'top 75%',
+          toggleActions: 'play none none none',
+        },
+      }
+    );
+
+    // 2. Staggered trainer cards entrance
+    gsap.fromTo(
+      '.trainer-card-item',
+      { y: 40, opacity: 0 },
+      {
+        y: 0,
+        opacity: 1,
+        duration: 0.9,
+        stagger: 0.1,
+        ease: 'power3.out',
+        scrollTrigger: {
+          trigger: '.trainer-grid-container',
+          start: 'top 80%',
+          toggleActions: 'play none none none',
+        },
+      }
+    );
+  });
 
   const handleTrainerClick = (trainer: Trainer) => {
     setSelectedTrainerId(trainer.id);
@@ -22,12 +62,14 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
   };
 
   return (
-    <section id="trainers" className="py-12 sm:py-20 lg:py-24 bg-[#0a0a0a] text-white relative">
+    <section id="trainers" ref={sectionRef} className="py-12 sm:py-20 lg:py-28 bg-[#0a0a0a] text-white relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12">
-        {/* Section Heading */}
+        {/* Section Heading with Line-by-Line Reveal */}
         <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-16">
           <h2 className="text-2xl sm:text-4xl lg:text-5xl font-headline font-black tracking-tight uppercase mb-3 sm:mb-4 text-white">
-            WE ARE HERE TO GUIDE YOU
+            <span className="block overflow-hidden">
+              <span className="trainer-title-line block">WE ARE HERE TO GUIDE YOU</span>
+            </span>
           </h2>
           <p className="font-editorial text-neutral-400 text-xs sm:text-sm leading-relaxed max-w-2xl mx-auto">
             Team of expert trainers are always here to guide and support you. Get professional tips on training scheme, intensity and healthy nutrition based on your individual abilities and preferences.
@@ -37,8 +79,8 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
           </p>
         </div>
 
-        {/* 5 Trainers: Compact 2-col grid on mobile (< sm), 3-col on tablet (sm), 5-col on desktop (lg) */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-6 sm:grid-cols-3 lg:grid-cols-5 items-start">
+        {/* 5 Trainers Grid: Staggered Entrance and Micro-interaction Hovers */}
+        <div className="trainer-grid-container grid grid-cols-2 gap-3 sm:gap-6 sm:grid-cols-3 lg:grid-cols-5 items-start">
           {TRAINERS.map((trainer) => {
             const isFeatured = trainer.id === selectedTrainerId;
 
@@ -46,27 +88,27 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
               <div
                 key={trainer.id}
                 onClick={() => handleTrainerClick(trainer)}
-                className={`cursor-pointer transition-all duration-300 relative w-full group ${
+                className={`trainer-card-item cursor-pointer transition-all duration-300 relative w-full group ${
                   isFeatured ? 'z-20 sm:-translate-y-2' : 'opacity-90 sm:opacity-75 sm:hover:opacity-100 z-10'
                 }`}
               >
                 {/* Image Container: 1:1 square on mobile for compact height, 3:4 portrait on desktop */}
                 <div
-                  className={`relative overflow-hidden aspect-square sm:aspect-[3/4] bg-neutral-900 transition-all ${
+                  className={`relative overflow-hidden aspect-square sm:aspect-[3/4] bg-neutral-900 transition-all duration-300 ${
                     isFeatured
-                      ? 'border-2 border-[#f36b22] shadow-[0_0_15px_rgba(243,107,34,0.3)]'
-                      : 'border border-neutral-800 group-hover:border-neutral-700'
+                      ? 'border-2 border-[#f36b22] shadow-[0_0_20px_rgba(243,107,34,0.35)]'
+                      : 'border border-neutral-800 group-hover:border-neutral-600'
                   }`}
                 >
                   <img
                     src={trainer.image}
                     alt={trainer.name}
-                    className="w-full h-full object-cover object-top filter grayscale contrast-125 transition-transform duration-500 group-hover:scale-105"
+                    className="w-full h-full object-cover object-top filter grayscale contrast-125 transition-transform duration-700 ease-out group-hover:scale-105"
                     referrerPolicy="no-referrer"
                     loading="lazy"
                   />
                   {!isFeatured && (
-                    <div className="absolute inset-0 bg-black/25 sm:bg-black/30 group-hover:bg-transparent transition-colors" />
+                    <div className="absolute inset-0 bg-black/25 sm:bg-black/30 group-hover:bg-transparent transition-colors duration-300" />
                   )}
                   {/* Subtle active badge on mobile */}
                   {isFeatured && (
@@ -98,7 +140,7 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
                   </p>
                 </div>
 
-                {/* Desktop Info View: Exact Original Design Preserved */}
+                {/* Desktop Info View: Exact Original Design Preserved with Subtle Card Shadow */}
                 {isFeatured ? (
                   <div className="hidden sm:block bg-white text-neutral-900 p-4 sm:p-5 shadow-2xl border-l-2 border-r-2 border-b-2 border-[#f36b22] -mt-[2px] transition-all">
                     <h3 className="font-headline font-black text-sm sm:text-base tracking-wider uppercase text-neutral-900">
@@ -113,7 +155,7 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
                   </div>
                 ) : (
                   <div className="hidden sm:block p-3 text-center">
-                    <p className="font-headline font-bold text-xs uppercase tracking-wider text-neutral-300">
+                    <p className="font-headline font-bold text-xs uppercase tracking-wider text-neutral-300 group-hover:text-white transition-colors">
                       {trainer.name}
                     </p>
                     <p className="text-[10px] text-neutral-500 uppercase tracking-wider">

@@ -1,24 +1,73 @@
 import React from 'react';
 import { PRIME_GYM_DATA } from '../data/primeGymData';
 import { MapPin, Phone, Mail, Clock, ArrowUpRight, MessageCircle } from 'lucide-react';
+import { useGsapAnimation } from '../hooks/useGsapAnimation';
+import { gsap } from '../utils/gsapSetup';
 
 interface AntiqueJoinContactProps {
   onOpenJoin: () => void;
 }
 
 export const AntiqueJoinContact: React.FC<AntiqueJoinContactProps> = ({ onOpenJoin }) => {
+  const sectionRef = useGsapAnimation<HTMLElement>((_ctx) => {
+
+    // Title line reveal
+    gsap.from('.contact-title-line', {
+      scrollTrigger: {
+        trigger: '.contact-title-wrapper',
+        start: 'top 85%',
+        toggleActions: 'play none none none',
+      },
+      y: 40,
+      opacity: 0,
+      duration: 0.8,
+      ease: 'power3.out',
+    });
+
+    // Parallax on map canvas
+    gsap.to('.contact-map-canvas', {
+      scrollTrigger: {
+        trigger: '.contact-map-container',
+        start: 'top bottom',
+        end: 'bottom top',
+        scrub: 1,
+      },
+      yPercent: 12,
+      ease: 'none',
+    });
+
+    // Floating card upward reveal
+    gsap.from('.contact-floating-card', {
+      scrollTrigger: {
+        trigger: '.contact-floating-card',
+        start: 'top 85%',
+        toggleActions: 'play none none none',
+      },
+      y: 60,
+      opacity: 0,
+      duration: 1,
+      ease: 'power3.out',
+      clearProps: 'transform,opacity',
+    });
+  });
+
   return (
-    <section id="contacts" className="pt-24 bg-white relative">
-      <div className="max-w-7xl mx-auto px-6 sm:px-12 mb-16">
-        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-headline font-black tracking-tight uppercase text-center text-neutral-900">
-          WELCOME TO JOIN!
-        </h2>
+    <section id="contacts" ref={sectionRef} className="pt-20 sm:pt-28 bg-white relative overflow-hidden">
+      <div className="max-w-7xl mx-auto px-6 sm:px-12 mb-12 sm:mb-16 contact-title-wrapper text-center">
+        <div className="overflow-hidden">
+          <h2 className="contact-title-line text-3xl sm:text-4xl lg:text-5xl font-headline font-black tracking-tight uppercase text-neutral-900">
+            WELCOME TO JOIN!
+          </h2>
+        </div>
+        <p className="text-neutral-500 font-editorial text-xs sm:text-sm mt-3 max-w-lg mx-auto">
+          Visit our flagship Shivaji Nagar facility or connect with our head coaches directly on WhatsApp.
+        </p>
       </div>
 
       {/* Map Graphic with Floating White Information Card */}
-      <div className="relative min-h-[520px] w-full bg-[#181a1f] overflow-hidden flex items-center justify-center lg:justify-end">
-        {/* Dark Styled Map Canvas Background */}
-        <div className="absolute inset-0 z-0 opacity-80 pointer-events-none">
+      <div className="contact-map-container relative min-h-[560px] w-full bg-[#181a1f] overflow-hidden flex items-center justify-center lg:justify-end">
+        {/* Dark Styled Map Canvas Background with Parallax */}
+        <div className="contact-map-canvas absolute inset-0 z-0 opacity-80 pointer-events-none scale-105">
           <svg className="w-full h-full object-cover" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <pattern id="street-grid" width="120" height="120" patternUnits="userSpaceOnUse">
@@ -36,24 +85,27 @@ export const AntiqueJoinContact: React.FC<AntiqueJoinContactProps> = ({ onOpenJo
 
           {/* Map Location Pin for Jalgaon Shivaji Nagar */}
           <div className="absolute top-[42%] left-[30%] sm:left-[42%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
-            <div className="w-10 h-10 rounded-full bg-[#f36b22] text-white flex items-center justify-center shadow-[0_0_20px_rgba(243,107,34,0.6)]">
-              <MapPin className="w-5 h-5 fill-white text-[#f36b22]" />
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-[#f36b22] animate-ping opacity-30" />
+              <div className="w-11 h-11 rounded-full bg-[#f36b22] text-white flex items-center justify-center shadow-[0_0_25px_rgba(243,107,34,0.7)] relative z-10">
+                <MapPin className="w-5 h-5 fill-white text-[#f36b22]" />
+              </div>
             </div>
-            <div className="mt-2 px-3 py-1 bg-neutral-900/90 text-white text-[10px] font-headline font-bold uppercase tracking-wider border border-neutral-700 whitespace-nowrap">
+            <div className="mt-2.5 px-3.5 py-1 bg-neutral-900/95 text-white text-[10px] font-headline font-bold uppercase tracking-wider border border-neutral-700 shadow-xl whitespace-nowrap">
               PRIME FITNESS · SHIVAJI NAGAR
             </div>
           </div>
         </div>
 
-        {/* Floating White Contact Card (Matches the exact mockup card on the right) */}
-        <div className="relative z-10 w-full max-w-lg mx-6 lg:mr-24 my-12 bg-white p-8 sm:p-10 shadow-2xl border-t-4 border-[#f36b22]">
-          <div className="space-y-6 text-xs text-neutral-800">
+        {/* Floating White Contact Card */}
+        <div className="contact-floating-card relative z-10 w-full max-w-lg mx-4 sm:mx-6 lg:mr-24 my-10 sm:my-14 bg-white p-6 sm:p-10 shadow-2xl border-t-4 border-[#f36b22]">
+          <div className="space-y-5 sm:space-y-6 text-xs text-neutral-800">
             {/* Address */}
-            <div className="grid grid-cols-12 gap-3 pb-5 border-b border-neutral-100">
-              <span className="col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
+            <div className="grid grid-cols-12 gap-3 pb-4 sm:pb-5 border-b border-neutral-100">
+              <span className="col-span-4 sm:col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
                 ADDRESS
               </span>
-              <div className="col-span-9 leading-relaxed text-neutral-600">
+              <div className="col-span-8 sm:col-span-9 leading-relaxed text-neutral-600">
                 <p className="font-semibold text-neutral-900">Saawariya godown, Front of Makra tower,</p>
                 <p>near Vikas dudh federation, Shivaji Nagar,</p>
                 <p>Jalgaon, Maharashtra 425001</p>
@@ -61,52 +113,54 @@ export const AntiqueJoinContact: React.FC<AntiqueJoinContactProps> = ({ onOpenJo
             </div>
 
             {/* Timings */}
-            <div className="grid grid-cols-12 gap-3 pb-5 border-b border-neutral-100">
-              <span className="col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
+            <div className="grid grid-cols-12 gap-3 pb-4 sm:pb-5 border-b border-neutral-100">
+              <span className="col-span-4 sm:col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
                 TIMINGS
               </span>
-              <div className="col-span-9 text-neutral-700 font-medium flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#f36b22]" />
+              <div className="col-span-8 sm:col-span-9 text-neutral-700 font-medium flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-[#f36b22] shrink-0" />
                 <span>{PRIME_GYM_DATA.timings}</span>
               </div>
             </div>
 
             {/* Phone */}
-            <div className="grid grid-cols-12 gap-3 pb-5 border-b border-neutral-100">
-              <span className="col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
+            <div className="grid grid-cols-12 gap-3 pb-4 sm:pb-5 border-b border-neutral-100">
+              <span className="col-span-4 sm:col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
                 PHONE
               </span>
-              <div className="col-span-9">
+              <div className="col-span-8 sm:col-span-9">
                 <a
                   href={`tel:${PRIME_GYM_DATA.phone}`}
-                  className="font-semibold text-neutral-900 hover:text-[#f36b22] transition-colors"
+                  className="font-semibold text-neutral-900 hover:text-[#f36b22] transition-colors inline-flex items-center gap-1.5"
                 >
-                  {PRIME_GYM_DATA.phone}
+                  <Phone className="w-3.5 h-3.5 text-[#f36b22]" />
+                  <span>{PRIME_GYM_DATA.phone}</span>
                 </a>
               </div>
             </div>
 
             {/* Email */}
-            <div className="grid grid-cols-12 gap-3 pb-5 border-b border-neutral-100">
-              <span className="col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
+            <div className="grid grid-cols-12 gap-3 pb-4 sm:pb-5 border-b border-neutral-100">
+              <span className="col-span-4 sm:col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
                 E-MAIL
               </span>
-              <div className="col-span-9">
+              <div className="col-span-8 sm:col-span-9">
                 <a
                   href={`mailto:${PRIME_GYM_DATA.email}`}
-                  className="text-neutral-600 hover:text-[#f36b22] transition-colors"
+                  className="text-neutral-600 hover:text-[#f36b22] transition-colors inline-flex items-center gap-1.5"
                 >
-                  {PRIME_GYM_DATA.email}
+                  <Mail className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>{PRIME_GYM_DATA.email}</span>
                 </a>
               </div>
             </div>
 
             {/* Socials */}
             <div className="grid grid-cols-12 gap-3 items-center">
-              <span className="col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
+              <span className="col-span-4 sm:col-span-3 font-headline font-bold uppercase tracking-[0.15em] text-neutral-900">
                 SOCIALS
               </span>
-              <div className="col-span-9 flex items-center gap-4 text-neutral-500">
+              <div className="col-span-8 sm:col-span-9 flex items-center gap-4 text-neutral-500">
                 <a
                   href={PRIME_GYM_DATA.instagramUrl}
                   target="_blank"
@@ -133,7 +187,7 @@ export const AntiqueJoinContact: React.FC<AntiqueJoinContactProps> = ({ onOpenJo
           <div className="mt-8 pt-6 border-t border-neutral-100 flex flex-col sm:flex-row gap-3">
             <button
               onClick={onOpenJoin}
-              className="flex-1 py-3 px-4 text-xs font-headline font-bold uppercase tracking-[0.2em] text-white bg-[#f36b22] hover:bg-[#d95614] transition-colors text-center cursor-pointer"
+              className="flex-1 py-3 px-4 text-xs font-headline font-bold uppercase tracking-[0.2em] text-white bg-[#f36b22] hover:bg-[#d95614] transition-all duration-200 text-center cursor-pointer shadow-md shadow-[#f36b22]/20 hover:shadow-lg"
             >
               CLAIM TRIAL PASS
             </button>
@@ -141,10 +195,10 @@ export const AntiqueJoinContact: React.FC<AntiqueJoinContactProps> = ({ onOpenJo
               href="https://maps.google.com/?q=Saawariya+godown+Shivaji+Nagar+Jalgaon"
               target="_blank"
               rel="noreferrer"
-              className="py-3 px-4 text-xs font-headline font-bold uppercase tracking-[0.2em] text-neutral-800 border border-neutral-300 hover:border-neutral-900 transition-colors flex items-center justify-center gap-1.5"
+              className="py-3 px-4 text-xs font-headline font-bold uppercase tracking-[0.2em] text-neutral-800 border border-neutral-300 hover:border-neutral-900 transition-colors flex items-center justify-center gap-1.5 group/dir"
             >
               <span>DIRECTIONS</span>
-              <ArrowUpRight className="w-3.5 h-3.5" />
+              <ArrowUpRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover/dir:translate-x-0.5 group-hover/dir:-translate-y-0.5" />
             </a>
           </div>
         </div>

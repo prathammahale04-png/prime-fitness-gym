@@ -73,7 +73,7 @@ export const AdminDashboardLayout: React.FC<AdminDashboardLayoutProps> = ({ onVi
           {currentSection === 'enquiries' && (
             <EnquiriesView
               onNavigateToMembers={(leadData) => {
-                if (leadData) setConvertLeadData(leadData);
+                if (leadData) setConvertLeadData({ ...leadData, mode: leadData.mode || 'view' });
                 setCurrentSection('members');
               }}
             />

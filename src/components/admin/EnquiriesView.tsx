@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { EnquiryRecord, EnquiryStatus } from '../../types/database.types';
+import { EnquiryRecord, EnquiryStatus, MembershipPackage, Member } from '../../types/database.types';
 import { getEnquiries, addEnquiry, updateEnquiryStatus } from '../../services/gymPlatformService';
+import { getPackages } from '../../services/packageService';
+import { ConvertEnquiryModal } from './ConvertEnquiryModal';
 import {
   MessageSquare,
   Plus,
@@ -21,10 +23,11 @@ import {
 
 export interface LeadConvertData {
   fullName: string;
-  phone: string;
+  phone?: string;
   email?: string | null;
   packageName?: string | null;
   notes?: string | null;
+  mode?: 'add' | 'view';
 }
 
 interface EnquiriesViewProps {
@@ -34,11 +37,14 @@ interface EnquiriesViewProps {
 export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMembers }) => {
   const { session } = useAuth();
   const [enquiries, setEnquiries] = useState<EnquiryRecord[]>([]);
+  const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | EnquiryStatus>('all');
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [convertingEnquiry, setConvertingEnquiry] = useState<EnquiryRecord | null>(null);
+  const [successToast, setSuccessToast] = useState<{ code: string; name: string; phone?: string } | null>(null);
 
   // Form states for manual walk-in lead creation
   const [name, setName] = useState('');
@@ -54,9 +60,13 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
     setLoading(true);
     setFetchError(null);
     try {
-      const res = await getEnquiries(session);
+      const [res, pkgRes] = await Promise.all([
+        getEnquiries(session),
+        getPackages(session),
+      ]);
       setEnquiries(res.enquiries);
       setIsLive(res.isLive);
+      setPackages(pkgRes.packages.filter((p) => p.is_active));
       if (res.error) {
         setFetchError(res.error);
       }
@@ -108,6 +118,13 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
   };
 
   const handleStatusChange = async (id: string, status: EnquiryStatus) => {
+    if (status === 'converted') {
+      const target = enquiries.find((e) => e.id === id);
+      if (target) {
+        setConvertingEnquiry(target);
+        return;
+      }
+    }
     await updateEnquiryStatus(id, status, undefined, session);
     await loadData();
   };
@@ -182,6 +199,39 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
           </button>
         </div>
       </div>
+
+      {successToast && (
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              Member <strong className="text-white font-mono">{successToast.code}</strong> ({successToast.name}) was successfully created in Supabase!
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {onNavigateToMembers && (
+              <button
+                onClick={() =>
+                  onNavigateToMembers({
+                    fullName: successToast.name,
+                    phone: successToast.phone,
+                    mode: 'view',
+                  })
+                }
+                className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-white rounded font-bold uppercase text-[10px] transition-colors cursor-pointer"
+              >
+                View in Directory
+              </button>
+            )}
+            <button
+              onClick={() => setSuccessToast(null)}
+              className="p-1 text-emerald-400 hover:text-white rounded hover:bg-emerald-500/20 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {fetchError && (
         <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-300 flex items-center gap-2">
@@ -320,20 +370,37 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
                         <span>WhatsApp</span>
                       </button>
 
-                      {enq.status !== 'converted' && onNavigateToMembers && (
+                      {enq.status === 'converted' ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold uppercase rounded inline-flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            <span>
+                              {enq.notes?.match(/PF-(\d+)/i)
+                                ? `PF-${enq.notes?.match(/PF-(\d+)/i)![1]}`
+                                : 'Converted'}
+                            </span>
+                          </span>
+                          {onNavigateToMembers && (
+                            <button
+                              onClick={() =>
+                                onNavigateToMembers({
+                                  fullName: enq.full_name,
+                                  phone: enq.phone,
+                                  packageName: enq.interested_package,
+                                })
+                              }
+                              className="px-2 py-1 bg-[#1e222d] hover:bg-[#282d3c] text-neutral-300 hover:text-white text-[10px] font-bold uppercase rounded border border-neutral-700 transition-colors cursor-pointer inline-flex items-center gap-1"
+                              title="View member record in directory"
+                            >
+                              <span>View Member</span>
+                            </button>
+                          )}
+                        </div>
+                      ) : (
                         <button
-                          onClick={() => {
-                            handleStatusChange(enq.id, 'converted');
-                            onNavigateToMembers({
-                              fullName: enq.full_name,
-                              phone: enq.phone,
-                              email: enq.email,
-                              packageName: enq.interested_package,
-                              notes: enq.notes,
-                            });
-                          }}
-                          className="px-2.5 py-1 bg-[#f36b22]/20 hover:bg-[#f36b22] text-[#f36b22] hover:text-white text-[10px] font-bold uppercase rounded border border-[#f36b22]/40 transition-colors cursor-pointer inline-flex items-center gap-1"
-                          title="Register as Confirmed Member"
+                          onClick={() => setConvertingEnquiry(enq)}
+                          className="px-2.5 py-1 bg-[#f36b22]/20 hover:bg-[#f36b22] text-[#f36b22] hover:text-white text-[10px] font-bold uppercase rounded border border-[#f36b22]/40 transition-colors cursor-pointer inline-flex items-center gap-1 shadow-xs"
+                          title="Convert lead to active Supabase gym member"
                         >
                           <UserCheck className="w-3 h-3" />
                           <span>Convert</span>
@@ -476,6 +543,23 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
           </div>
         </div>
       )}
+
+      {/* Convert Lead to Active Member Modal */}
+      <ConvertEnquiryModal
+        isOpen={Boolean(convertingEnquiry)}
+        onClose={() => setConvertingEnquiry(null)}
+        enquiry={convertingEnquiry}
+        packages={packages}
+        onSuccess={(newMember) => {
+          setSuccessToast({
+            code: newMember.member_code,
+            name: newMember.full_name,
+            phone: newMember.phone,
+          });
+          loadData();
+        }}
+        onNavigateToMembers={onNavigateToMembers}
+      />
     </div>
   );
 };

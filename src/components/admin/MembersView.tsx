@@ -38,6 +38,7 @@ export interface InitialMemberPrefill {
   email?: string | null;
   packageName?: string | null;
   notes?: string | null;
+  mode?: 'add' | 'view';
 }
 
 interface MembersViewProps {
@@ -133,24 +134,45 @@ export const MembersView: React.FC<MembersViewProps> = ({
     }
   }, [authLoading, session?.user?.id, session?.access_token, statusFilter]);
 
-  // Handle prefilling from Enquiries "Convert" action
+  // Listen for realtime conversion events across the application
+  useEffect(() => {
+    const handleDataChanged = () => {
+      loadData();
+    };
+    window.addEventListener('primefitness:data-changed', handleDataChanged);
+    return () => {
+      window.removeEventListener('primefitness:data-changed', handleDataChanged);
+    };
+  }, [session]);
+
+  // Handle prefilling from Enquiries "Convert" action or navigation
   useEffect(() => {
     if (initialMemberData) {
-      if (initialMemberData.fullName) setFullName(initialMemberData.fullName);
-      if (initialMemberData.phone) setPhone(initialMemberData.phone);
-      if (initialMemberData.email) setEmail(initialMemberData.email);
-      if (initialMemberData.notes) setNotes(initialMemberData.notes);
-      if (initialMemberData.packageName && packages.length > 0) {
-        const pkgMatch = packages.find(p =>
-          initialMemberData.packageName!.toLowerCase().includes(p.name.toLowerCase()) ||
-          p.name.toLowerCase().includes(initialMemberData.packageName!.toLowerCase())
-        );
-        if (pkgMatch) {
-          setSelectedPkgId(pkgMatch.id);
-          setAmountPaid(pkgMatch.price);
+      if (initialMemberData.mode === 'view') {
+        // If mode is view, filter the directory to this member without opening Add modal
+        if (initialMemberData.fullName) {
+          setSearchQuery(initialMemberData.fullName);
+        } else if (initialMemberData.phone) {
+          setSearchQuery(initialMemberData.phone);
         }
+      } else {
+        // Mode is add: prefill manual Add Member form
+        if (initialMemberData.fullName) setFullName(initialMemberData.fullName);
+        if (initialMemberData.phone) setPhone(initialMemberData.phone);
+        if (initialMemberData.email) setEmail(initialMemberData.email);
+        if (initialMemberData.notes) setNotes(initialMemberData.notes);
+        if (initialMemberData.packageName && packages.length > 0) {
+          const pkgMatch = packages.find(p =>
+            initialMemberData.packageName!.toLowerCase().includes(p.name.toLowerCase()) ||
+            p.name.toLowerCase().includes(initialMemberData.packageName!.toLowerCase())
+          );
+          if (pkgMatch) {
+            setSelectedPkgId(pkgMatch.id);
+            setAmountPaid(pkgMatch.price);
+          }
+        }
+        setIsAddOpen(true);
       }
-      setIsAddOpen(true);
       if (onClearInitialData) onClearInitialData();
     }
   }, [initialMemberData, packages, onClearInitialData]);

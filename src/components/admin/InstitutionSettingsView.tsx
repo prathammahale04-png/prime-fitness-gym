@@ -414,11 +414,12 @@ export const InstitutionSettingsView: React.FC = () => {
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || profile?.role !== 'owner'}
               className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#f36b22] hover:bg-[#d95614] disabled:opacity-50 text-white text-xs font-headline font-bold uppercase tracking-wider rounded-lg transition-colors cursor-pointer shadow-md shadow-[#f36b22]/20"
+              title={profile?.role !== 'owner' ? 'Only gym owners can update facility settings' : undefined}
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{saving ? 'Saving to Database...' : 'Save Profile Changes'}</span>
+              <span>{saving ? 'Saving to Database...' : profile?.role !== 'owner' ? 'Owner Role Required' : 'Save Profile Changes'}</span>
             </button>
           </div>
         </form>

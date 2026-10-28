@@ -1,7 +1,12 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
-import { UserProfile, AppRole } from '../types/database.types';
+import { UserProfile, AppRole, isValidAppRole } from '../types/database.types';
+
+export type ProfileResolution =
+  | { status: 'authorized'; profile: UserProfile }
+  | { status: 'unauthorized'; reason: 'missing_profile' | 'inactive' | 'invalid_role'; message: string }
+  | { status: 'transient_error'; message: string };
 
 interface AuthContextType {
   user: User | null;
@@ -11,6 +16,7 @@ interface AuthContextType {
   loading: boolean;
   isConfigured: boolean;
   error: string | null;
+  isTransientError: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -25,11 +31,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTransientError, setIsTransientError] = useState<boolean>(false);
 
   const configured = isSupabaseConfigured();
+  const isSigningOutRef = useRef<boolean>(false);
+  const inFlightFetchRef = useRef<string | null>(null);
 
-  const fetchProfile = useCallback(async (userId: string, userEmail: string, accessToken?: string): Promise<UserProfile | null> => {
-    if (!configured) return null;
+  /**
+   * Safely sign out the session without triggering recursive auth-state callbacks
+   * or deadlocks inside event loops.
+   */
+  const safeSignOut = useCallback(async () => {
+    if (isSigningOutRef.current) return;
+    isSigningOutRef.current = true;
+
+    try {
+      if (configured) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.warn('[Auth Security] Sign out notice:', err);
+    } finally {
+      isSigningOutRef.current = false;
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+    }
+  }, [configured]);
+
+  /**
+   * Resolves the profile from database and explicitly distinguishes:
+   * 1. Authorized active profile with valid AppRole
+   * 2. Confirmed unauthorized profile (missing, deactivated, or invalid role)
+   * 3. Transient network or server error (retains session for retry)
+   */
+  const resolveProfile = useCallback(async (
+    userId: string,
+    userEmail: string,
+    accessToken?: string
+  ): Promise<ProfileResolution> => {
+    if (!configured) {
+      return {
+        status: 'transient_error',
+        message: 'Supabase credentials are not configured. Please set environment variables.',
+      };
+    }
 
     try {
       const client = getAuthenticatedClient(accessToken);
@@ -39,67 +85,103 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .maybeSingle();
 
-      const isDesignatedOwner = userEmail.toLowerCase() === 'pranavsonawane1328@gmail.com';
-
-      console.info('[Auth Profile Diagnostic]', {
+      console.info('[Auth Profile Audit]', {
         userIdPrefix: userId ? `${userId.substring(0, 8)}...` : 'none',
         userEmail,
         hasAccessToken: Boolean(accessToken),
         profileFound: Boolean(data),
-        profileRole: data?.role || 'none',
+        profileRole: data?.role ?? null,
         isActive: data?.is_active,
-        isDesignatedOwner,
         queryError: profileErr ? profileErr.message : null,
       });
 
+      // 1. Transient query/network error - do NOT treat as confirmed unauthorized
       if (profileErr) {
-        console.warn('Profile fetch warning (table may be pending migration):', profileErr.message);
-        // Fallback profile if table is not yet migrated, preserving email
+        console.error('[Auth Security] Profile query communication failure:', profileErr.message);
         return {
-          id: userId,
-          email: userEmail,
-          full_name: isDesignatedOwner ? 'Gym Owner' : 'Gym Staff',
-          phone: null,
-          role: isDesignatedOwner ? 'owner' : 'staff',
-          is_active: true,
-          avatar_url: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          status: 'transient_error',
+          message: `Database communication error: ${profileErr.message}. Please check your connection.`,
         };
       }
 
-      if (data) {
-        if (!data.is_active) {
-          await supabase.auth.signOut();
-          setError('This account is pending approval or has been deactivated. Please contact the gym owner.');
-          return null;
-        }
-        return data as UserProfile;
+      // 2. Confirmed missing profile
+      if (!data) {
+        console.warn('[Auth Security] No profile record found in public.profiles for user:', userId);
+        return {
+          status: 'unauthorized',
+          reason: 'missing_profile',
+          message: 'No administrative profile record exists for this user in the database. Contact the gym owner to provision your profile.',
+        };
       }
 
-      // If no profile row exists in database yet, only designated owner gets initial access
-      if (!isDesignatedOwner) {
-        await supabase.auth.signOut();
-        setError('This account is pending owner approval. Please contact the gym owner.');
-        return null;
+      // 3. Confirmed inactive account
+      if (data.is_active !== true) {
+        console.warn('[Auth Security] Profile marked inactive for user:', userId);
+        return {
+          status: 'unauthorized',
+          reason: 'inactive',
+          message: 'This account has been deactivated or is pending approval. Please contact the gym owner.',
+        };
       }
 
+      // 4. Confirmed invalid or unexpected role
+      if (!isValidAppRole(data.role)) {
+        console.warn('[Auth Security] Unexpected or null role for user:', userId, data.role);
+        return {
+          status: 'unauthorized',
+          reason: 'invalid_role',
+          message: `This account has an unpermitted administrative role ('${data.role || 'none'}') in the database. Access restricted.`,
+        };
+      }
+
+      // 5. Explicitly authorized active profile
       return {
-        id: userId,
-        email: userEmail,
-        full_name: 'Gym Owner',
-        phone: null,
-        role: 'owner',
-        is_active: true,
-        avatar_url: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        status: 'authorized',
+        profile: data as UserProfile,
       };
     } catch (err: any) {
-      console.error('Error fetching profile:', err);
-      return null;
+      console.error('[Auth Security] Unexpected error during profile resolution:', err);
+      return {
+        status: 'transient_error',
+        message: err?.message || 'A network error occurred while verifying account authorization.',
+      };
     }
   }, [configured]);
+
+  /**
+   * Applies resolution result to React state and safely acts on unauthorized sessions.
+   */
+  const handleResolutionResult = useCallback((
+    result: ProfileResolution,
+    currentSession: Session | null
+  ) => {
+    if (result.status === 'authorized') {
+      setUser(currentSession?.user ?? null);
+      setSession(currentSession);
+      setProfile(result.profile);
+      setError(null);
+      setIsTransientError(false);
+    } else if (result.status === 'unauthorized') {
+      // Confirmed unauthorized: clear state and safely trigger signout deferred
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      setError(result.message);
+      setIsTransientError(false);
+
+      // Defer sign out outside the callback stack to prevent deadlock
+      setTimeout(() => {
+        safeSignOut();
+      }, 0);
+    } else {
+      // Transient error: retain user session for retry, but do NOT grant admin profile
+      setUser(currentSession?.user ?? null);
+      setSession(currentSession);
+      setProfile(null);
+      setError(result.message);
+      setIsTransientError(true);
+    }
+  }, [safeSignOut]);
 
   useEffect(() => {
     if (!configured) {
@@ -109,41 +191,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let isMounted = true;
 
-    // 1. Initial session check
+    // 1. Initial session check on mount
     supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       if (!isMounted) return;
 
       if (initialSession?.user) {
-        setSession(initialSession);
-        setUser(initialSession.user);
-        const userProfile = await fetchProfile(initialSession.user.id, initialSession.user.email || '', initialSession.access_token);
-        if (isMounted) setProfile(userProfile);
+        const fetchKey = `${initialSession.user.id}:${initialSession.access_token}`;
+        inFlightFetchRef.current = fetchKey;
+
+        const res = await resolveProfile(
+          initialSession.user.id,
+          initialSession.user.email || '',
+          initialSession.access_token
+        );
+
+        if (isMounted) {
+          handleResolutionResult(res, initialSession);
+        }
       } else {
         setSession(null);
         setUser(null);
         setProfile(null);
+        setError(null);
+        setIsTransientError(false);
       }
       if (isMounted) setLoading(false);
     }).catch((err) => {
-      console.error('Auth session initialization failed:', err);
-      if (isMounted) setLoading(false);
+      console.error('[Auth Security] Session retrieval failed:', err);
+      if (isMounted) {
+        setError('Failed to initialize session. Please check your network connection.');
+        setIsTransientError(true);
+        setLoading(false);
+      }
     });
 
-    // 2. Auth state subscription
+    // 2. Auth state change listener (deferred profile resolution to prevent deadlock)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
+      (event, currentSession) => {
         if (!isMounted) return;
 
-        setSession(currentSession);
+        // Skip re-fetching profile on token refresh if profile is already resolved and user matches
+        if (event === 'TOKEN_REFRESHED' && currentSession?.user && profile?.id === currentSession.user.id) {
+          setSession(currentSession);
+          return;
+        }
+
         if (currentSession?.user) {
-          setUser(currentSession.user);
-          const userProfile = await fetchProfile(currentSession.user.id, currentSession.user.email || '', currentSession.access_token);
-          if (isMounted) setProfile(userProfile);
+          // Defer profile resolution outside of the synchronous onAuthStateChange frame
+          setTimeout(async () => {
+            if (!isMounted) return;
+
+            const res = await resolveProfile(
+              currentSession.user.id,
+              currentSession.user.email || '',
+              currentSession.access_token
+            );
+
+            if (isMounted) {
+              handleResolutionResult(res, currentSession);
+              setLoading(false);
+            }
+          }, 0);
         } else {
           setUser(null);
+          setSession(null);
           setProfile(null);
+          setLoading(false);
         }
-        if (isMounted) setLoading(false);
       }
     );
 
@@ -151,14 +265,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [configured, fetchProfile]);
+  }, [configured, resolveProfile, handleResolutionResult, profile?.id]);
 
   const signInWithEmail = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setError(null);
+    setIsTransientError(false);
 
     if (!configured) {
       const msg = 'Supabase credentials are not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables.';
       setError(msg);
+      setIsTransientError(false);
       return { success: false, error: msg };
     }
 
@@ -170,48 +286,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (signInErr) {
         setError(signInErr.message);
+        setIsTransientError(false);
         return { success: false, error: signInErr.message };
       }
 
       if (data.user) {
-        setUser(data.user);
-        setSession(data.session);
-        const userProfile = await fetchProfile(data.user.id, data.user.email || '', data.session?.access_token);
-        setProfile(userProfile);
+        const res = await resolveProfile(data.user.id, data.user.email || '', data.session?.access_token);
+
+        if (res.status === 'authorized') {
+          setUser(data.user);
+          setSession(data.session);
+          setProfile(res.profile);
+          setError(null);
+          setIsTransientError(false);
+          return { success: true };
+        } else if (res.status === 'unauthorized') {
+          // Confirmed unauthorized profile: immediately sign out
+          await safeSignOut();
+          setError(res.message);
+          setIsTransientError(false);
+          return { success: false, error: res.message };
+        } else {
+          // Transient error: do not sign out, but do not log in to admin
+          setError(res.message);
+          setIsTransientError(true);
+          return { success: false, error: res.message };
+        }
       }
 
       return { success: true };
     } catch (err: any) {
       const msg = err?.message || 'An unexpected error occurred during sign in.';
       setError(msg);
+      setIsTransientError(true);
       return { success: false, error: msg };
     }
   };
 
   const signOut = async () => {
     setError(null);
-    try {
-      if (configured) {
-        await supabase.auth.signOut();
-      }
-    } catch (err) {
-      console.warn('Sign out warning:', err);
-    } finally {
-      setUser(null);
-      setSession(null);
-      setProfile(null);
-    }
+    setIsTransientError(false);
+    await safeSignOut();
   };
 
   const refreshProfile = async () => {
     if (user) {
+      setLoading(true);
       const { data: sessionData } = await supabase.auth.getSession();
-      const updated = await fetchProfile(user.id, user.email || '', sessionData?.session?.access_token);
-      setProfile(updated);
+      const res = await resolveProfile(
+        user.id,
+        user.email || '',
+        sessionData?.session?.access_token
+      );
+      handleResolutionResult(res, sessionData?.session ?? session);
+      setLoading(false);
     }
   };
 
-  const clearError = () => setError(null);
+  const clearError = () => {
+    setError(null);
+    setIsTransientError(false);
+  };
 
   const value: AuthContextType = {
     user,
@@ -221,6 +356,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     isConfigured: configured,
     error,
+    isTransientError,
     signInWithEmail,
     signOut,
     refreshProfile,

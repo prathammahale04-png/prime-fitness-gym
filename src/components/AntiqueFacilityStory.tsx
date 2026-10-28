@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useGsapAnimation } from '../hooks/useGsapAnimation';
-import { gsap } from '../utils/gsapSetup';
+import { gsap, isReducedMotionPreferred } from '../utils/gsapSetup';
 import { ArrowRight, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 
 import arenaStrengthImg from '../assets/images/facility_strength_zone_1791890949054.jpg';
@@ -33,20 +33,20 @@ const ARENA_ITEMS: ArenaStoryItem[] = [
   {
     id: 'arena-turf',
     number: '02',
-    title: 'HYROX & FUNCTIONAL TURF',
-    subtitle: 'METCON ARENA',
-    discipline: 'HYROX · Functional Threshold',
-    specs: ['30-meter high-density turf', 'Weighted push-pull tank sleds', 'Wall-ball target stations', 'Farmer carry cylinders'],
-    description: 'Official competition-spec athletic turf. Develop lactate buffering capacity, multi-planar work capacity, and relentless work endurance.',
+    title: 'FUNCTIONAL HYROX TURF',
+    subtitle: 'ATHLETIC SPEED & SLED TRACK',
+    discipline: 'HYROX · High-Velocity Conditioning',
+    specs: ['Continuous high-density turf', 'Competition-weighted sleds', 'Rogue cast-iron kettlebells', 'Plyometric vault boxes'],
+    description: 'A 25-meter sprint and sled-push runway designed specifically for HYROX race simulations, farmer carries, and explosive power output.',
     image: arenaTurfImg || '/images/facility_functional_turf_1791890950007.jpg',
   },
   {
     id: 'arena-cardio',
     number: '03',
-    title: 'CARDIO DECK & AEROBIC ENGINE',
-    subtitle: 'VO2 MAX PERFORMANCE',
-    discipline: 'Cardio Agility · Aerobic Base',
-    specs: ['Curved slat motorless treadmills', 'Assault AirBikes & Concept2 Rowers', 'SkiErg anaerobic stations', 'Real-time telemetry displays'],
+    title: 'CARDIO ENGINE DECK',
+    subtitle: 'AEROBIC THRESHOLD TRAINING',
+    discipline: 'VO2 Max · Metabolic Conditioning',
+    specs: ['Concept2 rowers & SkiErgs', 'Curved motorless slat treadmills', 'High-inertia air bikes', 'Real-time telemetry displays'],
     description: 'Motorless curved slat treadmills and assault bikes engineered for maximal cardiovascular output with reduced impact forces on connective tissue.',
     image: arenaCardioImg || '/images/facility_cardio_deck_1791890948475.jpg',
   },
@@ -69,12 +69,26 @@ interface AntiqueFacilityStoryProps {
 
 export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onExplorePlans, onClaimPass }) => {
   const [mobileActiveIndex, setMobileActiveIndex] = useState(0);
+  const [isReduced, setIsReduced] = useState(() => isReducedMotionPreferred());
   const horizontalTrackRef = useRef<HTMLDivElement | null>(null);
   const mobileScrollRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handler = () => setIsReduced(mq.matches);
+    try {
+      mq.addEventListener('change', handler);
+      return () => mq.removeEventListener('change', handler);
+    } catch {
+      mq.addListener?.(handler);
+      return () => mq.removeListener?.(handler);
+    }
+  }, []);
+
   const containerRef = useGsapAnimation<HTMLElement>((_ctx) => {
-    // Only engage pinning on desktop screens (>= 1024px)
-    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+    // Only engage pinning on desktop screens (>= 1024px) when reduced motion is not preferred
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024 && !isReducedMotionPreferred()) {
       const track = horizontalTrackRef.current;
       if (!track) return;
 
@@ -85,11 +99,11 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
           x: -totalScrollWidth,
           ease: 'none',
           scrollTrigger: {
-            trigger: '#facility-story',
+            trigger: '#facility',
             pin: true,
             scrub: 0.8,
             start: 'top top',
-            end: () => `+=${totalScrollWidth * 1.2}`,
+            end: () => `+=${totalScrollWidth * 1.15}`,
             anticipatePin: 1,
             invalidateOnRefresh: true,
           },
@@ -111,18 +125,26 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
       const cardWidth = mobileScrollRef.current.clientWidth * 0.88;
       mobileScrollRef.current.scrollTo({
         left: index * cardWidth,
-        behavior: 'smooth',
+        behavior: isReduced ? 'auto' : 'smooth',
       });
       setMobileActiveIndex(index);
     }
   };
 
+  const handleCtaClick = () => {
+    if (onClaimPass) onClaimPass();
+    else if (onExplorePlans) onExplorePlans();
+  };
+
   return (
     <section
-      id="facility-story"
+      id="facility"
       ref={containerRef}
       className="bg-[#0e1014] text-white py-16 sm:py-24 overflow-hidden relative"
     >
+      {/* Anchor for legacy or alternate URL links */}
+      <span id="facility-story" className="sr-only" aria-hidden="true" />
+
       <div className="max-w-7xl mx-auto px-4 sm:px-8 lg:px-12 mb-10 sm:mb-14">
         {/* Editorial Subheading */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-neutral-800 pb-6">
@@ -137,19 +159,19 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
             </h2>
           </div>
           <p className="text-xs sm:text-sm text-neutral-400 font-editorial max-w-md sm:text-right">
-            Every square foot is purpose-built with elite biomechanical specifications.
+            Every square foot is purpose-built with elite biomechanical specifications in Shivaji Nagar, Jalgaon.
           </p>
         </div>
       </div>
 
       {/* Desktop Horizontal Scroll Storytelling Track (>= 1024px) */}
-      <div className="hidden lg:block w-full overflow-hidden">
+      <div className={`hidden lg:block w-full ${isReduced ? 'overflow-x-auto pb-6' : 'overflow-hidden'}`}>
         <div
           ref={horizontalTrackRef}
           className="flex gap-8 px-12 will-change-transform"
           style={{ width: 'fit-content' }}
         >
-          {ARENA_ITEMS.map((item, idx) => (
+          {ARENA_ITEMS.map((item) => (
             <div
               key={item.id}
               className="w-[820px] shrink-0 bg-[#14161d] border border-neutral-800 hover:border-[#f36b22]/50 transition-colors duration-500 overflow-hidden flex flex-col group shadow-2xl"
@@ -195,12 +217,12 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
                     </div>
                   </div>
 
-                  {onExplorePlans && (
+                  {(onClaimPass || onExplorePlans) && (
                     <button
-                      onClick={onExplorePlans}
+                      onClick={handleCtaClick}
                       className="group/btn inline-flex items-center gap-2 text-xs font-headline font-bold uppercase tracking-[0.15em] text-[#f36b22] hover:text-white transition-colors cursor-pointer pt-4 border-t border-neutral-800"
                     >
-                      <span>Explore Membership Pass</span>
+                      <span>Claim Free Trial Pass</span>
                       <ArrowRight className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
                     </button>
                   )}
@@ -259,6 +281,16 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
                     ))}
                   </div>
                 </div>
+
+                {(onClaimPass || onExplorePlans) && (
+                  <button
+                    onClick={handleCtaClick}
+                    className="mt-4 pt-3 border-t border-neutral-800 text-xs font-headline font-bold uppercase tracking-wider text-[#f36b22] inline-flex items-center gap-1.5"
+                  >
+                    <span>Claim Trial Pass</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             </div>
           ))}

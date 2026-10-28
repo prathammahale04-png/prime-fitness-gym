@@ -10,7 +10,7 @@ interface AdminLoginPageProps {
 export const AdminLoginPage: React.FC<AdminLoginPageProps> = ({ onBackToWebsite, onLoginSuccess }) => {
   const { signInWithEmail, isConfigured, error, clearError } = useAuth();
 
-  const [email, setEmail] = useState('pranavsonawane1328@gmail.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);

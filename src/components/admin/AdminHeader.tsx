@@ -31,7 +31,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
 }) => {
   const { user, profile, role, signOut } = useAuth();
 
-  const roleLabel = role ? role.toUpperCase() : 'OWNER';
+  const roleLabel = role ? role.toUpperCase() : (profile?.role ? (profile.role as string).toUpperCase() : 'STAFF');
 
   return (
     <header className="h-16 bg-[#111216] border-b border-neutral-800/90 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">

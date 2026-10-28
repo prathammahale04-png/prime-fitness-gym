@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 
 export const PackagesView: React.FC = () => {
-  const { session, loading: authLoading } = useAuth();
+  const { session, profile, loading: authLoading } = useAuth();
+  const canManagePackages = profile?.role === 'owner' || profile?.role === 'staff';
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
@@ -160,13 +161,19 @@ export const PackagesView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-lg shadow-[#f36b22]/20 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Package</span>
-        </button>
+        {canManagePackages ? (
+          <button
+            onClick={handleOpenAdd}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-lg shadow-[#f36b22]/20 self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Package</span>
+          </button>
+        ) : (
+          <span className="text-[11px] font-mono text-neutral-500 bg-[#161820] border border-neutral-800 px-3 py-1.5 self-start sm:self-auto">
+            View-Only Access (Owner / Staff can modify)
+          </span>
+        )}
       </div>
 
       {/* Package Cards Grid */}
@@ -239,27 +246,29 @@ export const PackagesView: React.FC = () => {
                 </div>
 
                 {/* Card Action Controls */}
-                <div className="p-4 bg-[#0f1115] border-t border-neutral-800/80 flex items-center justify-between text-xs">
-                  <button
-                    onClick={() => handleOpenEdit(pkg)}
-                    className="inline-flex items-center gap-1.5 text-neutral-400 hover:text-white transition-colors cursor-pointer text-[11px] font-headline font-bold uppercase tracking-wider"
-                  >
-                    <Edit2 className="w-3 h-3 text-[#f36b22]" />
-                    <span>Edit</span>
-                  </button>
+                {canManagePackages && (
+                  <div className="p-4 bg-[#0f1115] border-t border-neutral-800/80 flex items-center justify-between text-xs">
+                    <button
+                      onClick={() => handleOpenEdit(pkg)}
+                      className="inline-flex items-center gap-1.5 text-neutral-400 hover:text-white transition-colors cursor-pointer text-[11px] font-headline font-bold uppercase tracking-wider"
+                    >
+                      <Edit2 className="w-3 h-3 text-[#f36b22]" />
+                      <span>Edit</span>
+                    </button>
 
-                  <button
-                    onClick={() => handleToggle(pkg)}
-                    className={`inline-flex items-center gap-1.5 transition-colors cursor-pointer text-[11px] font-headline font-bold uppercase tracking-wider ${
-                      pkg.is_active
-                        ? 'text-neutral-400 hover:text-amber-400'
-                        : 'text-emerald-400 hover:text-emerald-300'
-                    }`}
-                  >
-                    <Power className="w-3 h-3" />
-                    <span>{pkg.is_active ? 'Archive' : 'Activate'}</span>
-                  </button>
-                </div>
+                    <button
+                      onClick={() => handleToggle(pkg)}
+                      className={`inline-flex items-center gap-1.5 transition-colors cursor-pointer text-[11px] font-headline font-bold uppercase tracking-wider ${
+                        pkg.is_active
+                          ? 'text-neutral-400 hover:text-amber-400'
+                          : 'text-emerald-400 hover:text-emerald-300'
+                      }`}
+                    >
+                      <Power className="w-3 h-3" />
+                      <span>{pkg.is_active ? 'Archive' : 'Activate'}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

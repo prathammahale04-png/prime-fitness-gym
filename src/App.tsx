@@ -17,12 +17,13 @@ import { AntiqueJoinModal } from './components/AntiqueJoinModal';
 import { AdminLoginPage } from './components/auth/AdminLoginPage';
 import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { PricingPlan } from './data/primeGymData';
-import { Shield } from 'lucide-react';
+import { Shield, AlertCircle } from 'lucide-react';
+import { isValidAppRole } from './types/database.types';
 
 type AppView = 'public' | 'login' | 'admin';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading, error, isTransientError, refreshProfile, signOut } = useAuth();
 
   // Determine initial view based on browser URL path
   const getInitialView = (): AppView => {
@@ -35,6 +36,14 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<AppView>(getInitialView);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
+
+  // Explicit role validation: must have user, profile, active status, and valid allowed role
+  const isAuthorizedAdmin = Boolean(
+    user &&
+    profile &&
+    profile.is_active === true &&
+    isValidAppRole(profile.role)
+  );
 
   // Synchronize browser history and path
   const navigateTo = (view: AppView) => {
@@ -61,23 +70,31 @@ function AppContent() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Protected route enforcement
+  // Protected route enforcement: prevent redirect loops on transient errors
   useEffect(() => {
     if (!loading) {
-      if (currentView === 'admin' && !user) {
-        // Unauthenticated access to admin redirects to login
+      if (currentView === 'admin' && !isAuthorizedAdmin && !isTransientError) {
+        // Confirmed unauthorized or unauthenticated access redirects to login
         navigateTo('login');
-      } else if (currentView === 'login' && user) {
-        // Authenticated users accessing login redirect to admin
+      } else if (currentView === 'login' && isAuthorizedAdmin) {
+        // Authenticated users with verified active profiles accessing login redirect to admin
         navigateTo('admin');
       }
     }
-  }, [currentView, user, loading]);
+  }, [currentView, isAuthorizedAdmin, isTransientError, loading]);
 
   const scrollTo = (id: string) => {
-    const element = document.getElementById(id);
+    const targetId = id === 'facility-story' ? 'facility' : id;
+    const element = document.getElementById(targetId) || document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+      const headerOffset = 84;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+      const prefersReduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: prefersReduced ? 'auto' : 'smooth',
+      });
     }
   };
 
@@ -105,6 +122,43 @@ function AppContent() {
     );
   }
 
+  // Recoverable Error Screen on Admin Route for Transient Communication Errors
+  if (currentView === 'admin' && isTransientError && user) {
+    return (
+      <div className="min-h-screen bg-[#0d0f12] text-neutral-100 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-14 h-14 bg-[#161920] border border-amber-500/40 flex items-center justify-center text-amber-400 mb-4 shadow-xl">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <h2 className="font-headline font-black text-xl uppercase tracking-tight mb-2 text-white">
+          Authorization Verification Paused
+        </h2>
+        <p className="text-xs text-neutral-400 max-w-md mb-6 leading-relaxed">
+          {error || 'Unable to communicate with the database to verify your administrative role. Your authenticated session is preserved.'}
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <button
+            onClick={() => refreshProfile()}
+            className="px-6 py-2.5 bg-[#f36b22] hover:bg-[#d95614] text-white font-headline font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+          >
+            Retry Verification
+          </button>
+          <button
+            onClick={() => navigateTo('public')}
+            className="px-6 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-headline font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+          >
+            Return to Public Website
+          </button>
+          <button
+            onClick={() => signOut()}
+            className="px-6 py-2.5 border border-neutral-700 hover:border-red-500/50 hover:bg-red-500/10 text-neutral-400 hover:text-red-400 font-headline font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // 1. Owner & Staff Login View
   if (currentView === 'login') {
     return (
@@ -117,8 +171,8 @@ function AppContent() {
     );
   }
 
-  // 2. Protected Admin Dashboard View
-  if (currentView === 'admin' && user) {
+  // 2. Protected Admin Dashboard View - Strictly requires verified active profile with allowed role
+  if (currentView === 'admin' && isAuthorizedAdmin) {
     return (
       <div className="animate-view-fade min-h-screen">
         <AdminDashboardLayout

@@ -61,7 +61,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 }) => {
   const { user, profile, signOut } = useAuth();
   const [isSupportOpen, setIsSupportOpen] = useState(false);
-  const ownerEmail = profile?.email || user?.email || 'pranavsonawane1328@gmail.com';
+  const displayEmail = profile?.email || user?.email || '';
 
   return (
     <>
@@ -106,10 +106,10 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 
           <div className="px-2.5 py-1.5 bg-[#171920] border border-neutral-800 rounded-lg flex items-center justify-between text-xs">
             <span className="text-neutral-400 truncate max-w-[140px] text-[11px] font-mono">
-              {ownerEmail}
+              {displayEmail}
             </span>
             <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded font-bold">
-              OWNER
+              {profile?.role?.toUpperCase() || 'STAFF'}
             </span>
           </div>
         </div>

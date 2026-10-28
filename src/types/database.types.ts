@@ -1,4 +1,9 @@
 export type AppRole = 'owner' | 'staff' | 'trainer';
+export const VALID_APP_ROLES: readonly AppRole[] = ['owner', 'staff', 'trainer'] as const;
+
+export function isValidAppRole(role: unknown): role is AppRole {
+  return typeof role === 'string' && (VALID_APP_ROLES as readonly string[]).includes(role);
+}
 
 export interface UserProfile {
   id: string;

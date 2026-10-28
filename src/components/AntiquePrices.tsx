@@ -117,6 +117,12 @@ export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan }) =>
               </button>
             </div>
           </div>
+
+          {currency === 'USD' && (
+            <p className="mt-3 text-[11px] text-neutral-500 font-mono tracking-tight bg-neutral-50 border border-neutral-200 py-1.5 px-3 inline-block">
+              * USD values are informational estimates for international members. All memberships and official invoices are billed in Indian Rupees (INR ₹).
+            </p>
+          )}
         </div>
 
         {/* 4 Pricing Cards: 1 column on mobile with compact cards, 2 col on tablet, 4 col on desktop */}

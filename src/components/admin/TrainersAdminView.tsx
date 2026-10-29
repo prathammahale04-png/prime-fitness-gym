@@ -157,9 +157,11 @@ export const TrainersAdminView: React.FC = () => {
         prev.map((item) => (item.id === t.id ? { ...item, is_active: updatedStatus } : item))
       );
       setSuccessNotice(`✓ Coach ${t.name} set to ${updatedStatus ? 'Active' : 'Off-duty'}.`);
+      setErrorNotice(null);
       setTimeout(() => setSuccessNotice(null), 3000);
     } else {
-      alert(res.error || 'Failed to update trainer status.');
+      setErrorNotice(res.error || 'Failed to update trainer status.');
+      setTimeout(() => setErrorNotice(null), 5000);
     }
   };
 
@@ -173,9 +175,11 @@ export const TrainersAdminView: React.FC = () => {
     if (res.success) {
       setTrainers((prev) => prev.filter((item) => item.id !== t.id));
       setSuccessNotice(`✓ Deleted coach ${t.name} from public.trainers.`);
+      setErrorNotice(null);
       setTimeout(() => setSuccessNotice(null), 3000);
     } else {
-      alert(res.error || 'Failed to delete trainer from Supabase.');
+      setErrorNotice(res.error || 'Failed to delete trainer from Supabase.');
+      setTimeout(() => setErrorNotice(null), 5000);
     }
   };
 
@@ -222,6 +226,13 @@ export const TrainersAdminView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {errorNotice && (
+        <div className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center justify-between">
+          <span>{errorNotice}</span>
+          <button onClick={() => setErrorNotice(null)} className="text-red-400 hover:text-white">✕</button>
+        </div>
+      )}
 
       {successNotice && (
         <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs text-emerald-400 flex items-center gap-2">

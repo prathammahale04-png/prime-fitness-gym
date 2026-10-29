@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Member, CheckInRecord } from '../../types/database.types';
 import { getMembers } from '../../services/memberService';
 import { getCheckIns, recordCheckIn } from '../../services/gymPlatformService';
+import { getIndiaTodayDate, getIndiaDateFromTimestamp } from '../../utils/reminderUtils';
 import {
   QrCode,
   Search,
@@ -44,10 +45,10 @@ export const CheckInView: React.FC = () => {
     }
   }, [authLoading, session?.user?.id]);
 
-  // Today's date in YYYY-MM-DD
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  // Today's date in Indian Standard Time (YYYY-MM-DD)
+  const todayStr = useMemo(() => getIndiaTodayDate(), []);
   const todayCheckIns = useMemo(() => {
-    return checkins.filter(c => c.checked_in_at.startsWith(todayStr));
+    return checkins.filter(c => getIndiaDateFromTimestamp(c.checked_in_at) === todayStr);
   }, [checkins, todayStr]);
 
   // Search logic for instant auto-complete
@@ -68,12 +69,12 @@ export const CheckInView: React.FC = () => {
     setSuccessNotice(null);
   };
 
-  // Detect if selected member has already checked in on the same date
+  // Detect if selected member has already checked in on the same date (IST accurate)
   const alreadyCheckedInToday = useMemo(() => {
     if (!matchedMember) return null;
     return checkins.find(
       c =>
-        c.checked_in_at.startsWith(todayStr) &&
+        getIndiaDateFromTimestamp(c.checked_in_at) === todayStr &&
         (c.member_id === matchedMember.id || c.member_code === matchedMember.member_code)
     );
   }, [matchedMember, checkins, todayStr]);

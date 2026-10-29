@@ -16,7 +16,8 @@ import { AntiqueFooter } from './components/AntiqueFooter';
 import { AntiqueJoinModal } from './components/AntiqueJoinModal';
 import { AdminLoginPage } from './components/auth/AdminLoginPage';
 import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
-import { PricingPlan } from './data/primeGymData';
+import { PRICING_PLANS, PricingPlan } from './data/primeGymData';
+import { getActivePackages, mapPackageToPricingPlan } from './services/packageService';
 import { Shield, AlertCircle } from 'lucide-react';
 import { isValidAppRole } from './types/database.types';
 
@@ -36,6 +37,26 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<AppView>(getInitialView);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
+  const [activePricingPlans, setActivePricingPlans] = useState<PricingPlan[]>(PRICING_PLANS);
+
+  // Synchronize live active packages from Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const loadActivePlans = async () => {
+      try {
+        const res = await getActivePackages();
+        if (isMounted && res.packages && res.packages.length > 0) {
+          setActivePricingPlans(res.packages.map(mapPackageToPricingPlan));
+        }
+      } catch (err) {
+        console.warn('Failed to load active packages in App:', err);
+      }
+    };
+    loadActivePlans();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentView]);
 
   // Explicit role validation: must have user, profile, active status, and valid allowed role
   const isAuthorizedAdmin = Boolean(
@@ -211,9 +232,10 @@ function AppContent() {
         {/* Section 4: "WE ARE HERE TO GUIDE YOU" (Solid black background, 5 trainers, orange highlighted card) */}
         <AntiqueTrainers />
 
-        {/* Section 4: "OUR PRICES" (4 vertical pricing cards, 3-months highlighted in orange border) */}
+        {/* Section 4: "OUR PRICES" (Adaptive vertical pricing cards with live database sync) */}
         <AntiquePrices
           onSelectPlan={handleSelectPlan}
+          plans={activePricingPlans}
         />
 
         {/* Section 5: "WELCOME TO JOIN!" (Dark map of Jalgaon Shivaji Nagar + floating white contact card) */}
@@ -233,6 +255,7 @@ function AppContent() {
         isOpen={isJoinOpen}
         onClose={() => setIsJoinOpen(false)}
         selectedPlan={selectedPlan}
+        availablePlans={activePricingPlans}
       />
     </div>
   );

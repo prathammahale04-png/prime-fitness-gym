@@ -38,6 +38,7 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
   const [loading, setLoading] = useState(true);
   const [dbStatus, setDbStatus] = useState<{ connected: boolean; latencyMs?: number }>({ connected: false });
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [phoneNotice, setPhoneNotice] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -62,19 +63,30 @@ export const OverviewView: React.FC<OverviewViewProps> = ({ onNavigateSection })
       if (onNavigateSection) {
         onNavigateSection('reminders');
       } else {
-        alert(`Invalid phone number for ${m.full_name}: ${validation.errorReason}`);
+        setPhoneNotice(`Invalid phone number for ${m.full_name}: ${validation.errorReason || 'check phone'}`);
+        setTimeout(() => setPhoneNotice(null), 5000);
       }
       return;
     }
     const text = generateReminderMessage(m, 'soon');
     const url = buildWhatsAppLink(validation.normalizedNumber, text);
-    window.open(url, '_blank', 'noopener,noreferrer');
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch {
+      // safe in sandboxed environments
+    }
     setCopiedId(m.id);
     setTimeout(() => setCopiedId(null), 3000);
   };
 
   return (
     <div className="max-w-6xl mx-auto py-8 px-4 sm:px-6 space-y-6">
+      {phoneNotice && (
+        <div className="p-3 bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-center justify-between">
+          <span>{phoneNotice}</span>
+          <button onClick={() => setPhoneNotice(null)} className="text-red-400 hover:text-white">✕</button>
+        </div>
+      )}
       {/* Top Header & Range Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-neutral-800">
         <div>

@@ -35,6 +35,25 @@ export function getIndiaTodayDate(): string {
 }
 
 /**
+ * Converts any UTC/ISO timestamp or date string to Indian Standard Time (Asia/Kolkata) 'YYYY-MM-DD'.
+ */
+export function getIndiaDateFromTimestamp(timestampStr: string | null | undefined): string {
+  if (!timestampStr) return '';
+  try {
+    const d = new Date(timestampStr);
+    if (isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    return timestampStr.split('T')[0] || '';
+  }
+}
+
+/**
  * Calculates calendar day difference between expiry date and today.
  * Positive = future expiry, 0 = today, Negative = past / overdue.
  */

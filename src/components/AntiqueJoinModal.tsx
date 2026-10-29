@@ -1,19 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CheckCircle2, MessageCircle, RefreshCw, AlertCircle } from 'lucide-react';
 import { PRIME_GYM_DATA, PRICING_PLANS, PricingPlan } from '../data/primeGymData';
+import { getActivePackages, mapPackageToPricingPlan } from '../services/packageService';
 import { addEnquiry } from '../services/gymPlatformService';
 
 interface AntiqueJoinModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedPlan?: PricingPlan | null;
+  availablePlans?: PricingPlan[];
 }
 
 export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
   isOpen,
   onClose,
   selectedPlan,
+  availablePlans,
 }) => {
+  const [mounted, setMounted] = useState(false);
+  const [plansList, setPlansList] = useState<PricingPlan[]>(availablePlans || PRICING_PLANS);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -25,6 +31,12 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
   const [submittedPackage, setSubmittedPackage] = useState('');
   const [error, setError] = useState('');
 
+  const prevScrollYRef = useRef<number>(0);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (selectedPlan) {
       setPlanId(selectedPlan.id);
@@ -33,7 +45,67 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
     }
   }, [selectedPlan]);
 
-  if (!isOpen) return null;
+  // Keep plans list synchronized with live active packages
+  useEffect(() => {
+    if (availablePlans && availablePlans.length > 0) {
+      setPlansList(availablePlans);
+    } else if (isOpen) {
+      getActivePackages().then((res) => {
+        if (res.packages && res.packages.length > 0) {
+          setPlansList(res.packages.map(mapPackageToPricingPlan));
+        }
+      }).catch((err) => {
+        console.warn('Modal failed to load active packages:', err);
+      });
+    }
+  }, [availablePlans, isOpen]);
+
+  // Lock background scroll and capture scroll position when open, restore on close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Record exact current scroll position before locking
+    const currentScrollY = window.scrollY;
+    prevScrollYRef.current = currentScrollY;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+
+    // Compensate for scrollbar disappearance to prevent layout shift
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        handleReset();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+      window.removeEventListener('keydown', handleKeyDown);
+      // Restore previous scroll position immediately
+      window.scrollTo({ top: prevScrollYRef.current, behavior: 'instant' });
+    };
+  }, [isOpen, isSubmitting]);
+
+  const handleReset = () => {
+    setSubmitted(false);
+    setError('');
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && !isSubmitting) {
+      handleReset();
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +135,7 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
     let packageName = 'Free 1-Day Trial Pass';
     let leadSource = 'Website Trial Pass';
     if (planId !== 'trial') {
-      const matched = PRICING_PLANS.find((p) => p.id === planId);
+      const matched = plansList.find((p) => p.id === planId) || (selectedPlan?.id === planId ? selectedPlan : null);
       if (matched) {
         packageName = `${matched.durationNumber} ${matched.durationUnit} (₹ ${matched.price})`;
       } else {
@@ -105,16 +177,20 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
     }
   };
 
-  const handleReset = () => {
-    setSubmitted(false);
-    setError('');
-    setIsSubmitting(false);
-    onClose();
-  };
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-white p-5 sm:p-8 lg:p-10 shadow-2xl border-t-4 border-[#f36b22] text-neutral-900 my-4 sm:my-8">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto overscroll-contain"
+      onClick={handleBackdropClick}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="join-modal-title"
+    >
+      <div
+        className="relative w-full max-w-lg bg-white p-5 sm:p-8 lg:p-10 shadow-2xl border-t-4 border-[#f36b22] text-neutral-900 my-auto max-h-[calc(100dvh-2rem)] sm:max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           onClick={handleReset}
           disabled={isSubmitting}
@@ -130,7 +206,7 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
               <span className="text-[11px] font-headline font-bold uppercase tracking-[0.2em] text-[#f36b22] block mb-1">
                 PRIME FITNESS | JALGAON
               </span>
-              <h3 className="text-xl sm:text-2xl font-headline font-black uppercase text-neutral-900">
+              <h3 id="join-modal-title" className="text-xl sm:text-2xl font-headline font-black uppercase text-neutral-900">
                 {planId === 'trial' ? 'CLAIM FREE TRIAL PASS' : 'MEMBERSHIP REGISTRATION'}
               </h3>
               <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed font-editorial">
@@ -200,7 +276,7 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
                     className="w-full p-3 border border-neutral-300 focus:outline-none focus:border-[#f36b22] bg-white text-neutral-900 font-medium"
                   >
                     <option value="trial">Free 1-Day Trial Session</option>
-                    {PRICING_PLANS.map((p) => (
+                    {plansList.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.durationNumber} {p.durationUnit} — ₹ {p.price}
                       </option>
@@ -312,6 +388,7 @@ export const AntiqueJoinModal: React.FC<AntiqueJoinModalProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

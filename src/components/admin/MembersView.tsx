@@ -74,7 +74,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
   const [email, setEmail] = useState('');
   const [gender, setGender] = useState<'male' | 'female' | 'other'>('male');
   const [selectedPkgId, setSelectedPkgId] = useState('');
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(getIndiaTodayDate());
   const [amountPaid, setAmountPaid] = useState<number>(0);
   const [emergencyContact, setEmergencyContact] = useState('');
   const [notes, setNotes] = useState('');
@@ -83,7 +83,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
 
   // Renew Form
   const [renewPkgId, setRenewPkgId] = useState('');
-  const [renewStartDate, setRenewStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [renewStartDate, setRenewStartDate] = useState(getIndiaTodayDate());
   const [renewAmountPaid, setRenewAmountPaid] = useState<number>(0);
 
   const loadData = async () => {
@@ -214,7 +214,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
     setPhone('');
     setEmail('');
     setGender('male');
-    setStartDate(new Date().toISOString().split('T')[0]);
+    setStartDate(getIndiaTodayDate());
     if (packages.length > 0) {
       setSelectedPkgId(packages[0].id);
       setAmountPaid(packages[0].price);
@@ -297,7 +297,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
       setRenewPkgId(defaultPkg.id);
       setRenewAmountPaid(defaultPkg.price);
     }
-    setRenewStartDate(new Date().toISOString().split('T')[0]);
+    setRenewStartDate(m.expiry_date && m.expiry_date >= getIndiaTodayDate() ? m.expiry_date : getIndiaTodayDate());
     setIsRenewOpen(true);
   };
 

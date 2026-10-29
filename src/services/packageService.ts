@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import { MembershipPackage } from '../types/database.types';
+import { PricingPlan } from '../data/primeGymData';
 
 export const DEFAULT_PACKAGES: MembershipPackage[] = [
   {
@@ -84,6 +85,103 @@ export async function getPackages(sessionOverride?: any): Promise<{ packages: Me
   } catch (err) {
     console.warn('Failed to load packages from database:', err);
     return { packages: DEFAULT_PACKAGES, isLive: false };
+  }
+}
+
+export function formatPackageDuration(pkg: MembershipPackage): { durationNumber: string; durationUnit: string } {
+  const days = pkg.duration_days;
+  const name = pkg.name || '';
+
+  // Match leading number and duration word (e.g. "8 months", "1 MONTH", "12 MONTHS")
+  const match = name.match(/^(\d+)\s*(month|months|year|years|day|days)/i);
+  if (match) {
+    const num = match[1];
+    const rawUnit = match[2].toUpperCase();
+    let unit = rawUnit;
+    if (num === '1') {
+      unit = rawUnit.replace(/S$/, '');
+    } else if (!rawUnit.endsWith('S')) {
+      unit = `${rawUnit}S`;
+    }
+    return {
+      durationNumber: num,
+      durationUnit: unit,
+    };
+  }
+
+  if (days >= 365 || pkg.duration_type === 'yearly') {
+    const years = Math.round(days / 365) || 1;
+    return {
+      durationNumber: String(years),
+      durationUnit: years === 1 ? 'YEAR' : 'YEARS',
+    };
+  }
+
+  if (days >= 30) {
+    const months = Math.round(days / 30);
+    return {
+      durationNumber: String(months),
+      durationUnit: months === 1 ? 'MONTH' : 'MONTHS',
+    };
+  }
+
+  return {
+    durationNumber: String(days),
+    durationUnit: days === 1 ? 'DAY' : 'DAYS',
+  };
+}
+
+export function mapPackageToPricingPlan(pkg: MembershipPackage): PricingPlan {
+  const { durationNumber, durationUnit } = formatPackageDuration(pkg);
+
+  const isHighlighted =
+    pkg.duration_days === 90 ||
+    pkg.duration_type === 'quarterly' ||
+    pkg.name.toLowerCase().includes('3 month') ||
+    pkg.name.toLowerCase().includes('intensive');
+
+  return {
+    id: pkg.id,
+    durationNumber,
+    durationUnit,
+    price: pkg.price.toLocaleString('en-IN'),
+    highlighted: isHighlighted,
+    features: Array.isArray(pkg.features) && pkg.features.length > 0
+      ? pkg.features
+      : [
+          'Full 4000+ Sq.Ft. gym access',
+          'Strength & Cardio deck workouts',
+          'HYROX & functional turf zone',
+          'Coach consultation & form check',
+        ],
+  };
+}
+
+export async function getActivePackages(): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+  if (!isSupabaseConfigured()) {
+    return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: false };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('packages')
+      .select('*')
+      .eq('is_active', true)
+      .order('price', { ascending: true });
+
+    if (error) {
+      console.warn('Active packages fetch error, using defaults:', error.message);
+      return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: false };
+    }
+
+    if (!data || data.length === 0) {
+      return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: true };
+    }
+
+    return { packages: data as MembershipPackage[], isLive: true };
+  } catch (err) {
+    console.warn('Failed to load active packages from database:', err);
+    return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: false };
   }
 }
 

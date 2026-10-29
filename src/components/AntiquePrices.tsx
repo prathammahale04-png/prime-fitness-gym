@@ -1,15 +1,62 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PRICING_PLANS, PricingPlan } from '../data/primeGymData';
+import { getActivePackages, mapPackageToPricingPlan } from '../services/packageService';
+import { supabase } from '../lib/supabase';
 import { useGsapAnimation } from '../hooks/useGsapAnimation';
 import { gsap } from '../utils/gsapSetup';
 import { ArrowRight, Check } from 'lucide-react';
 
 interface AntiquePricesProps {
   onSelectPlan: (plan: PricingPlan) => void;
+  plans?: PricingPlan[];
 }
 
-export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan }) => {
+export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan, plans: externalPlans }) => {
   const [currency, setCurrency] = useState<'INR' | 'USD'>('INR');
+  const [internalPlans, setInternalPlans] = useState<PricingPlan[]>(PRICING_PLANS);
+
+  // Load live packages from Supabase public.packages table
+  useEffect(() => {
+    if (externalPlans && externalPlans.length > 0) {
+      setInternalPlans(externalPlans);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchLivePackages = async () => {
+      try {
+        const res = await getActivePackages();
+        if (isMounted && res.packages && res.packages.length > 0) {
+          const mapped = res.packages.map(mapPackageToPricingPlan);
+          setInternalPlans(mapped);
+        }
+      } catch (err) {
+        console.warn('Could not load live packages, preserving fallback:', err);
+      }
+    };
+
+    fetchLivePackages();
+
+    // Subscribe to realtime package changes so new packages appear immediately
+    const channel = supabase
+      .channel('public:packages_prices')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'packages' },
+        () => {
+          fetchLivePackages();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [externalPlans]);
+
+  const displayPlans = externalPlans && externalPlans.length > 0 ? externalPlans : internalPlans;
 
   const getPriceDisplay = (plan: PricingPlan) => {
     if (currency === 'USD') {
@@ -19,13 +66,17 @@ export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan }) =>
         'plan-6-months': '$ 124',
         'plan-1-year': '$ 244',
       };
-      return usdMap[plan.id] || '$ 24';
+      if (usdMap[plan.id]) return usdMap[plan.id];
+
+      // Dynamic conversion for newly added packages (~₹84 per USD)
+      const numericPrice = Number(String(plan.price).replace(/[^0-9.]/g, '')) || 0;
+      const approxUsd = Math.round(numericPrice / 84);
+      return `$ ${approxUsd}`;
     }
     return `₹ ${plan.price}`;
   };
 
   const sectionRef = useGsapAnimation<HTMLElement>((_ctx) => {
-
     // Header reveal
     gsap.from('.prices-heading-line', {
       scrollTrigger: {
@@ -66,7 +117,7 @@ export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan }) =>
       ease: 'power2.out',
       clearProps: 'transform,opacity',
     });
-  });
+  }, { dependencies: [displayPlans] });
 
   return (
     <section
@@ -125,9 +176,19 @@ export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan }) =>
           )}
         </div>
 
-        {/* 4 Pricing Cards: 1 column on mobile with compact cards, 2 col on tablet, 4 col on desktop */}
-        <div className="pricing-cards-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 items-stretch">
-          {PRICING_PLANS.map((plan) => {
+        {/* Pricing Cards Grid: Adaptive columns for 1 to 5+ packages */}
+        <div
+          className={`pricing-cards-grid grid gap-4 sm:gap-6 items-stretch ${
+            displayPlans.length === 5
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'
+              : displayPlans.length >= 4
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+              : displayPlans.length === 3
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-5xl mx-auto'
+              : 'grid-cols-1 sm:grid-cols-2 max-w-3xl mx-auto'
+          }`}
+        >
+          {displayPlans.map((plan) => {
             const isFeatured = plan.highlighted;
 
             return (
@@ -150,7 +211,7 @@ export const AntiquePrices: React.FC<AntiquePricesProps> = ({ onSelectPlan }) =>
                   {/* Top Row on Mobile: Number + Name + Price (aligned horizontally on mobile, stacked on desktop) */}
                   <div className="flex sm:flex-col items-center sm:justify-center justify-between gap-3 mb-4 sm:mb-6 pb-3 sm:pb-0 border-b sm:border-b-0 border-neutral-100">
                     <div className="flex items-center sm:flex-col gap-2.5 sm:gap-0">
-                      {/* Circular Number Indicator: ( 1 ) or ( 3 ) */}
+                      {/* Circular Number Indicator: ( 1 ), ( 3 ), ( 8 ), etc. */}
                       <div
                         className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full border flex items-center justify-center text-xs sm:text-sm font-headline font-bold shrink-0 transition-transform duration-300 group-hover:scale-110 ${
                           isFeatured

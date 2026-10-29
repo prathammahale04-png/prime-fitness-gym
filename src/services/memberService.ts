@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured, getAuthenticatedClient } from '../lib/supabase';
 import { Member, MemberInput, MembershipPackage, MemberStatus } from '../types/database.types';
+import { getIndiaTodayDate } from '../utils/reminderUtils';
 
 // Fallback in-memory/localStorage cache for offline or pre-migration testing
 const LOCAL_STORAGE_KEY = 'primefitness_mh19_members_cache';
@@ -75,7 +76,9 @@ const INITIAL_MEMBERS: Member[] = [
 
 export function clearMemberCache(): void {
   try {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+    }
   } catch (err) {
     console.warn('Failed to clear member cache:', err);
   }
@@ -83,6 +86,9 @@ export function clearMemberCache(): void {
 
 function getLocalMembers(): Member[] {
   try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return INITIAL_MEMBERS;
+    }
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (!raw) {
       return INITIAL_MEMBERS;
@@ -96,7 +102,9 @@ function getLocalMembers(): Member[] {
 
 function saveLocalMembers(members: Member[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(members));
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(members));
+    }
   } catch (err) {
     console.warn('Failed to save to localStorage:', err);
   }
@@ -108,13 +116,23 @@ function isValidUUID(str: string | null | undefined): boolean {
 }
 
 export function calculateExpiryDate(startDateStr: string, durationDays: number): string {
-  const start = new Date(startDateStr);
-  if (isNaN(start.getTime())) {
-    return new Date().toISOString().split('T')[0];
+  if (!startDateStr || durationDays <= 0) return startDateStr || getIndiaTodayDate();
+  const parts = startDateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) {
+    const start = new Date(startDateStr);
+    if (isNaN(start.getTime())) {
+      return getIndiaTodayDate();
+    }
+    start.setDate(start.getDate() + durationDays);
+    return start.toISOString().split('T')[0];
   }
-  const expiry = new Date(start);
-  expiry.setDate(expiry.getDate() + durationDays);
-  return expiry.toISOString().split('T')[0];
+  const [year, month, day] = parts;
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+  utcDate.setUTCDate(utcDate.getUTCDate() + durationDays);
+  const y = utcDate.getUTCFullYear();
+  const m = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(utcDate.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export async function getMembers(
@@ -260,7 +278,7 @@ export async function getMembers(
     }
 
     // Live records present in Supabase!
-    const today = new Date().toISOString().split('T')[0];
+    const today = getIndiaTodayDate();
     const updatedMembers: Member[] = liveRecords.map(m => {
       if (m.status !== 'inactive') {
         const isExpired = m.expiry_date < today;
@@ -296,11 +314,11 @@ export async function addMember(
   pkg: MembershipPackage,
   sessionOverride?: any
 ): Promise<{ success: boolean; data?: Member; error?: string }> {
-  const startDate = input.start_date || new Date().toISOString().split('T')[0];
+  const startDate = input.start_date || getIndiaTodayDate();
   const expiryDate = calculateExpiryDate(startDate, pkg.duration_days);
   const balanceDue = input.balance_due !== undefined ? input.balance_due : Math.max(0, pkg.price - input.amount_paid);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getIndiaTodayDate();
   const status: MemberStatus = expiryDate < today ? 'expired' : 'active';
 
   // Fallback for offline mode when Supabase is completely unconfigured
@@ -502,7 +520,7 @@ export async function renewMember(
 ): Promise<{ success: boolean; error?: string }> {
   const expiryDate = calculateExpiryDate(startDateStr, pkg.duration_days);
   const balanceDue = Math.max(0, pkg.price - amountPaid);
-  const status: MemberStatus = expiryDate < new Date().toISOString().split('T')[0] ? 'expired' : 'active';
+  const status: MemberStatus = expiryDate < getIndiaTodayDate() ? 'expired' : 'active';
 
   const updates = {
     package_id: isValidUUID(pkg.id) ? pkg.id : null,

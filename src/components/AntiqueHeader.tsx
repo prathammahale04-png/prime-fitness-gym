@@ -9,30 +9,16 @@ interface AntiqueHeaderProps {
 
 export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpenJoin }) => {
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isVisible, setIsVisible] = useState(true);
-  const [lastScrollY, setLastScrollY] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      setIsScrolled(currentScrollY > 20);
-
-      // Scroll up/down hide behavior as requested by user
-      if (currentScrollY > lastScrollY && currentScrollY > 60) {
-        if (!mobileMenuOpen) {
-          setIsVisible(false);
-        }
-      } else {
-        setIsVisible(true);
-      }
-
-      setLastScrollY(currentScrollY);
+      setIsScrolled(window.scrollY > 20);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [lastScrollY, mobileMenuOpen]);
+  }, []);
 
   const handleLinkClick = (id: string) => {
     onNavigate(id);
@@ -43,8 +29,6 @@ export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpen
     <>
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          isVisible ? 'translate-y-0' : '-translate-y-full'
-        } ${
           isScrolled
             ? 'bg-white/95 backdrop-blur-md shadow-sm py-4 border-b border-neutral-100'
             : 'bg-white py-6'
@@ -76,8 +60,8 @@ export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpen
             </div>
           </a>
 
-          {/* Right Navigation: ABOUT · FACILITY · TRAINERS · PRICES · CONTACTS */}
-          <nav className="hidden md:flex items-center gap-8 lg:gap-10">
+          {/* Right Navigation & Desktop CTA: ABOUT · FACILITY · TRAINERS · PRICES · CONTACTS · JOIN NOW */}
+          <nav className="hidden md:flex items-center gap-6 lg:gap-8">
             <button
               onClick={() => handleLinkClick('about')}
               className="text-xs font-headline font-bold uppercase tracking-[0.2em] text-neutral-800 hover:text-[#f36b22] transition-colors cursor-pointer"
@@ -108,20 +92,19 @@ export const AntiqueHeader: React.FC<AntiqueHeaderProps> = ({ onNavigate, onOpen
             >
               CONTACTS
             </button>
-          </nav>
-
-          {/* Join Call to Action / Mobile Button */}
-          <div className="flex items-center gap-4">
             <button
               onClick={onOpenJoin}
-              className="hidden sm:inline-block px-5 py-2 text-xs font-headline font-bold uppercase tracking-[0.18em] text-white bg-[#f36b22] hover:bg-[#d95614] rounded-none transition-colors cursor-pointer shadow-sm"
+              className="ml-2 px-5 py-2 text-xs font-headline font-bold uppercase tracking-[0.18em] text-white bg-[#f36b22] hover:bg-[#d95614] rounded-none transition-colors cursor-pointer shadow-sm"
             >
               JOIN NOW
             </button>
+          </nav>
 
+          {/* Mobile Navigation Toggle (Untouched for Mobile) */}
+          <div className="flex items-center md:hidden">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 text-neutral-800 hover:text-[#f36b22]"
+              className="p-2 text-neutral-800 hover:text-[#f36b22]"
               aria-label="Toggle Navigation"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}

@@ -19,9 +19,23 @@ export const normalizeSupabaseUrl = (rawUrl?: string): string => {
   }
 };
 
-const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const getEnv = (key: string): string => {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env[key]) {
+      return String((import.meta as any).env[key]).trim();
+    }
+  } catch {}
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return String(process.env[key]).trim();
+    }
+  } catch {}
+  return '';
+};
+
+const rawUrl = getEnv('VITE_SUPABASE_URL');
 const supabaseUrl = normalizeSupabaseUrl(rawUrl);
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(

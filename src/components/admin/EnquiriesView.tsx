@@ -4,6 +4,7 @@ import { EnquiryRecord, EnquiryStatus, MembershipPackage, Member } from '../../t
 import { getEnquiries, addEnquiry, updateEnquiryStatus } from '../../services/gymPlatformService';
 import { getPackages } from '../../services/packageService';
 import { ConvertEnquiryModal } from './ConvertEnquiryModal';
+import { getIndiaTodayDate } from '../../utils/reminderUtils';
 import {
   MessageSquare,
   Plus,
@@ -53,8 +54,9 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
   const [source, setSource] = useState('Website Trial Pass');
   const [plan, setPlan] = useState('3 MONTHS INTENSIVE');
   const [notes, setNotes] = useState('');
-  const [followUpDate, setFollowUpDate] = useState(new Date().toISOString().split('T')[0]);
+  const [followUpDate, setFollowUpDate] = useState(getIndiaTodayDate());
   const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -108,9 +110,10 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
         setPhone('');
         setEmail('');
         setNotes('');
+        setFormError(null);
         await loadData();
       } else {
-        alert(res.error || 'Failed to save lead record.');
+        setFormError(res.error || 'Failed to save lead record.');
       }
     } finally {
       setIsSubmittingManual(false);
@@ -433,6 +436,12 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({ onNavigateToMember
             </div>
 
             <form onSubmit={handleCreate} className="mt-5 space-y-4 text-xs">
+              {formError && (
+                <div className="p-3 bg-red-950/40 border border-red-500/40 text-red-300 text-xs rounded-lg flex items-center justify-between">
+                  <span>{formError}</span>
+                  <button type="button" onClick={() => setFormError(null)} className="text-red-400 hover:text-white">✕</button>
+                </div>
+              )}
               <div>
                 <label className="block font-medium text-neutral-300 mb-1">Full Name *</label>
                 <input

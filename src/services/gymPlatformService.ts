@@ -8,7 +8,8 @@ import {
   TrainerRecord,
   Member,
 } from '../types/database.types';
-import { getMembers } from './memberService';
+import { getMembers, calculateExpiryDate } from './memberService';
+import { getIndiaTodayDate, getIndiaDateFromTimestamp } from '../utils/reminderUtils';
 
 // Storage keys for hybrid offline/pre-migration persistence
 const STORAGE_KEYS = {
@@ -226,6 +227,9 @@ const INITIAL_TRAINERS: TrainerRecord[] = [
 // Helper to load or initialize from localStorage
 function getStored<T>(key: string, initial: T[]): T[] {
   try {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+      return initial;
+    }
     const raw = localStorage.getItem(key);
     if (!raw) {
       localStorage.setItem(key, JSON.stringify(initial));
@@ -239,7 +243,9 @@ function getStored<T>(key: string, initial: T[]): T[] {
 
 function setStored<T>(key: string, data: T[]): void {
   try {
-    localStorage.setItem(key, JSON.stringify(data));
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(data));
+    }
   } catch (err) {
     console.warn(`Failed to save ${key} to storage:`, err);
   }
@@ -1110,12 +1116,12 @@ export async function getOverviewStats(period: 'today' | 'week' | 'month' | 'yea
   const activeMembers = allMembers.filter(m => m.status === 'active');
 
   // Filter payments by selected period
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getIndiaTodayDate();
   const now = new Date();
 
   const filteredPayments = paymentsList.filter(p => {
     if (period === 'today') {
-      return p.payment_date === todayStr;
+      return getIndiaDateFromTimestamp(p.payment_date) === todayStr || p.payment_date === todayStr;
     }
     const pDate = new Date(p.payment_date);
     if (period === 'week') {
@@ -1136,14 +1142,14 @@ export async function getOverviewStats(period: 'today' | 'week' | 'month' | 'yea
   // Outstanding fees across all members
   const totalDues = allMembers.reduce((acc, m) => acc + (Number(m.balance_due) || 0), 0);
 
-  // Expiring in next 7 days
-  const sevenDaysAheadStr = new Date(now.getTime() + 7 * 86400000).toISOString().split('T')[0];
+  // Expiring in next 7 days (IST accurate)
+  const sevenDaysAheadStr = calculateExpiryDate(todayStr, 7);
   const expiringMembers = allMembers.filter(m => {
     return m.status === 'active' && m.expiry_date >= todayStr && m.expiry_date <= sevenDaysAheadStr;
   });
 
-  // Checkins today
-  const todayCheckIns = checkinsList.filter(c => c.checked_in_at.startsWith(todayStr));
+  // Checkins today (IST accurate)
+  const todayCheckIns = checkinsList.filter(c => getIndiaDateFromTimestamp(c.checked_in_at) === todayStr);
 
   // New registrations this month
   const newRegs = allMembers.filter(m => {

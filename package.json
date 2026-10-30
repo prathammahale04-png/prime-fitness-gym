@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "test:auth": "tsx src/tests/authAuthorization.test.ts",
     "test:packages": "tsx src/tests/packageSynchronization.test.ts",
-    "test:system": "tsx src/tests/systemIntegrity.test.ts"
+    "test:system": "tsx src/tests/systemIntegrity.test.ts",
+    "test:routing": "tsx src/tests/spaRouting.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

@@ -60,7 +60,24 @@ async function getClient(sessionOverride?: any) {
   return supabase;
 }
 
-export async function getPackages(sessionOverride?: any): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+// High-performance In-Memory Cache with Stale-While-Revalidate (SWR)
+let memoryPackagesCache: { packages: MembershipPackage[]; isLive: boolean; timestamp: number } | null = null;
+let memoryActivePackagesCache: { packages: MembershipPackage[]; isLive: boolean; timestamp: number } | null = null;
+const PACKAGE_CACHE_TTL_MS = 45000; // 45 seconds TTL
+
+export function invalidatePackageCache(): void {
+  memoryPackagesCache = null;
+  memoryActivePackagesCache = null;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('primefitness:data-changed'));
+  }
+}
+
+export async function getPackages(sessionOverride?: any, forceRefresh: boolean = false): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+  if (!forceRefresh && memoryPackagesCache && Date.now() - memoryPackagesCache.timestamp < PACKAGE_CACHE_TTL_MS) {
+    return { packages: memoryPackagesCache.packages, isLive: memoryPackagesCache.isLive };
+  }
+
   if (!isSupabaseConfigured()) {
     return { packages: DEFAULT_PACKAGES, isLive: false };
   }
@@ -78,10 +95,13 @@ export async function getPackages(sessionOverride?: any): Promise<{ packages: Me
     }
 
     if (!data || data.length === 0) {
+      memoryPackagesCache = { packages: DEFAULT_PACKAGES, isLive: true, timestamp: Date.now() };
       return { packages: DEFAULT_PACKAGES, isLive: true };
     }
 
-    return { packages: data as MembershipPackage[], isLive: true };
+    const result = { packages: data as MembershipPackage[], isLive: true };
+    memoryPackagesCache = { ...result, timestamp: Date.now() };
+    return result;
   } catch (err) {
     console.warn('Failed to load packages from database:', err);
     return { packages: DEFAULT_PACKAGES, isLive: false };
@@ -157,7 +177,11 @@ export function mapPackageToPricingPlan(pkg: MembershipPackage): PricingPlan {
   };
 }
 
-export async function getActivePackages(): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+export async function getActivePackages(forceRefresh: boolean = false): Promise<{ packages: MembershipPackage[]; isLive: boolean }> {
+  if (!forceRefresh && memoryActivePackagesCache && Date.now() - memoryActivePackagesCache.timestamp < PACKAGE_CACHE_TTL_MS) {
+    return { packages: memoryActivePackagesCache.packages, isLive: memoryActivePackagesCache.isLive };
+  }
+
   if (!isSupabaseConfigured()) {
     return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: false };
   }
@@ -175,10 +199,13 @@ export async function getActivePackages(): Promise<{ packages: MembershipPackage
     }
 
     if (!data || data.length === 0) {
+      memoryActivePackagesCache = { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: true, timestamp: Date.now() };
       return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: true };
     }
 
-    return { packages: data as MembershipPackage[], isLive: true };
+    const result = { packages: data as MembershipPackage[], isLive: true };
+    memoryActivePackagesCache = { ...result, timestamp: Date.now() };
+    return result;
   } catch (err) {
     console.warn('Failed to load active packages from database:', err);
     return { packages: DEFAULT_PACKAGES.filter((p) => p.is_active), isLive: false };
@@ -202,6 +229,7 @@ export async function createPackage(
       .single();
 
     if (error) return { success: false, error: error.message };
+    invalidatePackageCache();
     return { success: true, data: data as MembershipPackage };
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to create package' };
@@ -225,6 +253,7 @@ export async function updatePackage(
       .eq('id', id);
 
     if (error) return { success: false, error: error.message };
+    invalidatePackageCache();
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || 'Failed to update package' };

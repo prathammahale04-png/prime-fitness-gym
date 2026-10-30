@@ -74,7 +74,26 @@ const INITIAL_MEMBERS: Member[] = [
   },
 ];
 
+// High-performance In-Memory SWR Cache for Member records
+interface MemberCacheEntry {
+  rawMembers: Member[];
+  isLive: boolean;
+  isCachedFallback?: boolean;
+  notice?: string;
+  timestamp: number;
+}
+let memoryMembersCache: MemberCacheEntry | null = null;
+const MEMBER_CACHE_TTL_MS = 30000; // 30 seconds
+
+export function invalidateMemberCache(): void {
+  memoryMembersCache = null;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('primefitness:data-changed'));
+  }
+}
+
 export function clearMemberCache(): void {
+  invalidateMemberCache();
   try {
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
       localStorage.removeItem(LOCAL_STORAGE_KEY);
@@ -140,7 +159,8 @@ export async function getMembers(
     search?: string;
     status?: string;
   },
-  sessionOverride?: any
+  sessionOverride?: any,
+  forceRefresh: boolean = false
 ): Promise<{
   members: Member[];
   isLive: boolean;
@@ -164,9 +184,20 @@ export async function getMembers(
     return res;
   };
 
+  // Instant in-memory cache hit (0ms latency for seamless tab transitions)
+  if (!forceRefresh && memoryMembersCache && Date.now() - memoryMembersCache.timestamp < MEMBER_CACHE_TTL_MS) {
+    return {
+      members: applyFilters(memoryMembersCache.rawMembers),
+      isLive: memoryMembersCache.isLive,
+      isCachedFallback: memoryMembersCache.isCachedFallback,
+      notice: memoryMembersCache.notice,
+    };
+  }
+
   // If Supabase is not configured, operate purely in local cache mode
   if (!isSupabaseConfigured()) {
-    return { members: applyFilters(getLocalMembers()), isLive: false };
+    const local = getLocalMembers();
+    return { members: applyFilters(local), isLive: false };
   }
 
   // 1. Resolve active Supabase Auth session
@@ -268,11 +299,19 @@ export async function getMembers(
           cachedCount: local.length,
           profileStatus: profileRoleStatus,
         });
+        const fallbackNotice = `Live Supabase connected. Remote members table has 0 records; displaying ${local.length} preserved cached member records.`;
+        memoryMembersCache = {
+          rawMembers: local,
+          isLive: true,
+          isCachedFallback: true,
+          notice: fallbackNotice,
+          timestamp: Date.now(),
+        };
         return {
           members: applyFilters(local),
           isLive: true,
           isCachedFallback: true,
-          notice: `Live Supabase connected. Remote members table has 0 records; displaying ${local.length} preserved cached member records.`,
+          notice: fallbackNotice,
         };
       }
     }
@@ -294,6 +333,14 @@ export async function getMembers(
     if (updatedMembers.length > 0) {
       saveLocalMembers(updatedMembers);
     }
+
+    // Store in memory cache for instant tab navigation
+    memoryMembersCache = {
+      rawMembers: updatedMembers,
+      isLive: true,
+      isCachedFallback: false,
+      timestamp: Date.now(),
+    };
 
     return {
       members: applyFilters(updatedMembers),
@@ -348,6 +395,7 @@ export async function addMember(
     const current = getLocalMembers();
     current.unshift(localMember);
     saveLocalMembers(current);
+    invalidateMemberCache();
     return { success: true, data: localMember };
   }
 
@@ -500,6 +548,7 @@ export async function addMember(
     const filtered = currentList.filter(m => m.id !== newMember.id && m.member_code !== newMember.member_code);
     filtered.unshift(newMember);
     saveLocalMembers(filtered);
+    invalidateMemberCache();
 
     return { success: true, data: newMember };
   } catch (err: any) {
@@ -582,6 +631,7 @@ export async function renewMember(
       list[idx] = { ...list[idx], ...updates };
       saveLocalMembers(list);
     }
+    invalidateMemberCache();
 
     return { success: true };
   } catch (err: any) {
@@ -645,6 +695,7 @@ export async function toggleMemberDeactivate(
       list[idx].status = newStatus;
       saveLocalMembers(list);
     }
+    invalidateMemberCache();
 
     return { success: true };
   } catch (err: any) {
@@ -712,6 +763,7 @@ export async function updateMemberPhone(
       list[idx].updated_at = new Date().toISOString();
       saveLocalMembers(list);
     }
+    invalidateMemberCache();
 
     return { success: true };
   } catch (err: any) {

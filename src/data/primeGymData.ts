@@ -4,6 +4,7 @@ export interface Trainer {
   role: string;
   specialty: string;
   image: string;
+  imageWebp?: string;
   bio: string;
 }
 
@@ -33,10 +34,15 @@ export const PRIME_GYM_DATA = {
 };
 
 import trainerStrengthImg from '../assets/images/facility_strength_zone_1791890949054.jpg';
+import trainerStrengthWebp from '../assets/images/facility_strength_zone_1791890949054.webp';
 import trainerHyroxImg from '../assets/images/trainer_hyrox_female_1792235874601.jpg';
+import trainerHyroxWebp from '../assets/images/trainer_hyrox_female_1792235874601.webp';
 import trainerTurfImg from '../assets/images/facility_functional_turf_1791890950007.jpg';
+import trainerTurfWebp from '../assets/images/facility_functional_turf_1791890950007.webp';
 import trainerCardioImg from '../assets/images/facility_cardio_deck_1791890948475.jpg';
+import trainerCardioWebp from '../assets/images/facility_cardio_deck_1791890948475.webp';
 import trainerOlyImg from '../assets/images/exhibition_barbell_knurling_1791892495905.jpg';
+import trainerOlyWebp from '../assets/images/exhibition_barbell_knurling_1791892495905.webp';
 
 export const TRAINERS: Trainer[] = [
   {
@@ -45,6 +51,7 @@ export const TRAINERS: Trainer[] = [
     role: 'Strength & Powerlifting Coach',
     specialty: 'Powerlifting',
     image: trainerStrengthImg || '/images/facility_strength_zone_1791890949054.jpg',
+    imageWebp: trainerStrengthWebp,
     bio: 'State powerlifting medalist specializing in heavy compound mechanics, squat & deadlift lockout technique.',
   },
   {
@@ -53,6 +60,7 @@ export const TRAINERS: Trainer[] = [
     role: 'Head HYROX & Conditioning Coach',
     specialty: 'HYROX & MetCon',
     image: trainerHyroxImg || '/images/trainer_hyrox_female_1792235874601.jpg',
+    imageWebp: trainerHyroxWebp,
     bio: 'Certified HYROX master trainer and functional conditioning coach with 8+ years coaching athletes.',
   },
   {
@@ -61,6 +69,7 @@ export const TRAINERS: Trainer[] = [
     role: 'Senior Transformation Specialist',
     specialty: 'Hypertrophy & Fat Loss',
     image: trainerTurfImg || '/images/facility_functional_turf_1791890950007.jpg',
+    imageWebp: trainerTurfWebp,
     bio: 'Precision hypertrophy programmer with focus on biomechanics, progressive overload and nutrition tracking.',
   },
   {
@@ -69,6 +78,7 @@ export const TRAINERS: Trainer[] = [
     role: 'Cardio & Aerobic Endurance Coach',
     specialty: 'Cardio & Agility',
     image: trainerCardioImg || '/images/facility_cardio_deck_1791890948475.jpg',
+    imageWebp: trainerCardioWebp,
     bio: 'High-intensity interval trainer dedicated to aerobic threshold building, VO2 max and core stability.',
   },
   {
@@ -77,6 +87,7 @@ export const TRAINERS: Trainer[] = [
     role: 'Olympic Lifting & Mobility Coach',
     specialty: 'Olympic Lifting',
     image: trainerOlyImg || '/images/exhibition_barbell_knurling_1791892495905.jpg',
+    imageWebp: trainerOlyWebp,
     bio: 'Expert in shoulder stability, hip mobility, clean & jerk velocity and injury-free longevity.',
   },
 ];

@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { PRIME_GYM_DATA } from '../data/primeGymData';
 import athleticWomanImg from '../assets/images/athletic_woman_workout_1792235872529.jpg';
+import athleticWomanWebp from '../assets/images/athletic_woman_workout_1792235872529.webp';
 import { useGsapAnimation } from '../hooks/useGsapAnimation';
 import { gsap } from '../utils/gsapSetup';
 
@@ -165,12 +166,19 @@ export const AntiqueArtOfBody: React.FC<AntiqueArtOfBodyProps> = ({ onLearnMore 
               ref={imageWrapperRef}
               className="relative max-w-lg w-full overflow-hidden will-change-transform"
             >
-              <img
-                src={athleticWomanImg || '/images/athletic_woman_workout_1792235872529.jpg'}
-                alt="Athletic Fitness Training at Prime Fitness"
-                className="w-full h-auto object-contain max-h-[500px] select-none pointer-events-none"
-                referrerPolicy="no-referrer"
-              />
+              <picture className="w-full h-auto block">
+                <source srcSet={athleticWomanWebp} type="image/webp" />
+                <img
+                  src={athleticWomanImg}
+                  alt="Athletic Fitness Training at Prime Fitness"
+                  width={512}
+                  height={500}
+                  loading="lazy"
+                  decoding="async"
+                  className="w-full h-auto object-contain max-h-[500px] select-none pointer-events-none"
+                  referrerPolicy="no-referrer"
+                />
+              </picture>
             </div>
           </div>
 

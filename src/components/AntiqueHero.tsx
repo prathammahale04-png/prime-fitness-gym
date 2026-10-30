@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import heroPanoramaImg from '../assets/images/antique_hero_panorama_bg_1792239521892.jpg';
+import heroPanoramaWebp from '../assets/images/antique_hero_panorama_bg_1792239521892.webp';
 import { useGsapAnimation } from '../hooks/useGsapAnimation';
 import { gsap } from '../utils/gsapSetup';
 
@@ -80,13 +81,21 @@ export const AntiqueHero: React.FC<AntiqueHeroProps> = () => {
       <div className="relative w-full max-w-[1440px] mx-auto overflow-hidden">
         <div className="relative w-full aspect-[1376/768] select-none">
           {/* Athlete Photograph — 100% full uncropped image showing athlete head, full torso, legs, and outstretched arm */}
-          <img
-            ref={imageRef}
-            src={heroPanoramaImg || '/images/antique_hero_panorama_bg_1792239521892.jpg'}
-            alt="Prime Fitness Hero Athlete Background"
-            className="w-full h-full object-contain block filter brightness-100 contrast-105 pointer-events-none select-none will-change-transform"
-            referrerPolicy="no-referrer"
-          />
+          <picture className="w-full h-full block">
+            <source srcSet={heroPanoramaWebp} type="image/webp" />
+            <img
+              ref={imageRef}
+              src={heroPanoramaImg}
+              alt="Prime Fitness Hero Athlete Background"
+              width={1376}
+              height={768}
+              fetchPriority="high"
+              loading="eager"
+              decoding="async"
+              className="w-full h-full object-contain block filter brightness-100 contrast-105 pointer-events-none select-none will-change-transform"
+              referrerPolicy="no-referrer"
+            />
+          </picture>
 
           {/* Master Heading Composition — BUILD / YOUR / BODY with coordinated line-by-line mask entrance */}
           <div

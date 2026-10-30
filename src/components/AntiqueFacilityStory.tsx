@@ -4,9 +4,13 @@ import { gsap, isReducedMotionPreferred } from '../utils/gsapSetup';
 import { ArrowRight, ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
 
 import arenaStrengthImg from '../assets/images/facility_strength_zone_1791890949054.jpg';
+import arenaStrengthWebp from '../assets/images/facility_strength_zone_1791890949054.webp';
 import arenaTurfImg from '../assets/images/facility_functional_turf_1791890950007.jpg';
+import arenaTurfWebp from '../assets/images/facility_functional_turf_1791890950007.webp';
 import arenaCardioImg from '../assets/images/facility_cardio_deck_1791890948475.jpg';
+import arenaCardioWebp from '../assets/images/facility_cardio_deck_1791890948475.webp';
 import arenaOlyImg from '../assets/images/exhibition_barbell_knurling_1791892495905.jpg';
+import arenaOlyWebp from '../assets/images/exhibition_barbell_knurling_1791892495905.webp';
 
 interface ArenaStoryItem {
   id: string;
@@ -17,6 +21,7 @@ interface ArenaStoryItem {
   specs: string[];
   description: string;
   image: string;
+  imageWebp?: string;
 }
 
 const ARENA_ITEMS: ArenaStoryItem[] = [
@@ -29,6 +34,7 @@ const ARENA_ITEMS: ArenaStoryItem[] = [
     specs: ['Eleiko-spec calibrated plates', 'Full Olympic squat racks', 'Deadlift drop platforms', 'Barbell velocity cameras'],
     description: 'Built for uncompromising mechanical force. Heavy compound platforms dedicated to squat, bench press, and deadlift velocity without queuing.',
     image: arenaStrengthImg || '/images/facility_strength_zone_1791890949054.jpg',
+    imageWebp: arenaStrengthWebp,
   },
   {
     id: 'arena-turf',
@@ -39,6 +45,7 @@ const ARENA_ITEMS: ArenaStoryItem[] = [
     specs: ['Continuous high-density turf', 'Competition-weighted sleds', 'Rogue cast-iron kettlebells', 'Plyometric vault boxes'],
     description: 'A 25-meter sprint and sled-push runway designed specifically for HYROX race simulations, farmer carries, and explosive power output.',
     image: arenaTurfImg || '/images/facility_functional_turf_1791890950007.jpg',
+    imageWebp: arenaTurfWebp,
   },
   {
     id: 'arena-cardio',
@@ -49,6 +56,7 @@ const ARENA_ITEMS: ArenaStoryItem[] = [
     specs: ['Concept2 rowers & SkiErgs', 'Curved motorless slat treadmills', 'High-inertia air bikes', 'Real-time telemetry displays'],
     description: 'Motorless curved slat treadmills and assault bikes engineered for maximal cardiovascular output with reduced impact forces on connective tissue.',
     image: arenaCardioImg || '/images/facility_cardio_deck_1791890948475.jpg',
+    imageWebp: arenaCardioWebp,
   },
   {
     id: 'arena-oly',
@@ -59,6 +67,7 @@ const ARENA_ITEMS: ArenaStoryItem[] = [
     specs: ['Precision laser-knurled bars', 'Vibration-damped drop bays', 'Active mobility band station', 'Percussion therapy tools'],
     description: 'Biomechanical precision zone. Develop clean & jerk velocity, snatch stability, overhead shoulder mobility, and resilient connective tissue.',
     image: arenaOlyImg || '/images/exhibition_barbell_knurling_1791892495905.jpg',
+    imageWebp: arenaOlyWebp,
   },
 ];
 
@@ -179,12 +188,18 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
               <div className="grid grid-cols-12 h-[460px]">
                 {/* Left Side: Photo with Subtle Zoom on Hover */}
                 <div className="col-span-7 relative overflow-hidden bg-neutral-900">
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-full h-full object-cover filter grayscale contrast-110 group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700 pointer-events-none select-none"
-                    loading="lazy"
-                  />
+                  <picture className="w-full h-full block">
+                    {item.imageWebp && <source srcSet={item.imageWebp} type="image/webp" />}
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      width={478}
+                      height={460}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover filter grayscale contrast-110 group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700 pointer-events-none select-none"
+                    />
+                  </picture>
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
                   <div className="absolute top-4 left-4 px-2.5 py-1 bg-black/80 border border-neutral-700 text-white font-mono font-bold text-xs">
                     {item.number} / 04
@@ -248,12 +263,18 @@ export const AntiqueFacilityStory: React.FC<AntiqueFacilityStoryProps> = ({ onEx
             >
               {/* Photo */}
               <div className="relative aspect-[16/10] overflow-hidden bg-neutral-900">
-                <img
-                  src={item.image}
-                  alt={item.title}
-                  className="w-full h-full object-cover filter grayscale contrast-110"
-                  loading="lazy"
-                />
+                <picture className="w-full h-full block">
+                  {item.imageWebp && <source srcSet={item.imageWebp} type="image/webp" />}
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    width={420}
+                    height={262}
+                    className="w-full h-full object-cover filter grayscale contrast-110"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </picture>
                 <div className="absolute top-3 left-3 px-2 py-0.5 bg-black/80 text-white font-mono font-bold text-[10px]">
                   {item.number} / 04
                 </div>

@@ -14,12 +14,29 @@ import { AntiquePrices } from './components/AntiquePrices';
 import { AntiqueJoinContact } from './components/AntiqueJoinContact';
 import { AntiqueFooter } from './components/AntiqueFooter';
 import { AntiqueJoinModal } from './components/AntiqueJoinModal';
-import { AdminLoginPage } from './components/auth/AdminLoginPage';
-import { AdminDashboardLayout } from './components/admin/AdminDashboardLayout';
 import { PRICING_PLANS, PricingPlan } from './data/primeGymData';
 import { getActivePackages, mapPackageToPricingPlan } from './services/packageService';
 import { Shield, AlertCircle } from 'lucide-react';
 import { isValidAppRole } from './types/database.types';
+
+// Code-split admin modules to prevent public visitors from downloading dashboard assets
+const AdminLoginPage = React.lazy(() =>
+  import('./components/auth/AdminLoginPage').then(m => ({ default: m.AdminLoginPage }))
+);
+const AdminDashboardLayout = React.lazy(() =>
+  import('./components/admin/AdminDashboardLayout').then(m => ({ default: m.AdminDashboardLayout }))
+);
+
+const AdminLoadingFallback = () => (
+  <div className="min-h-screen bg-[#0d0f12] text-white flex flex-col items-center justify-center p-6">
+    <div className="w-12 h-12 bg-[#161920] border border-neutral-800 flex items-center justify-center text-[#f36b22] mb-4">
+      <Shield className="w-6 h-6 animate-pulse" />
+    </div>
+    <p className="font-headline font-bold uppercase tracking-wider text-xs text-neutral-400">
+      Loading Operations Hub...
+    </p>
+  </div>
+);
 
 type AppView = 'public' | 'login' | 'admin';
 
@@ -184,10 +201,12 @@ function AppContent() {
   if (currentView === 'login') {
     return (
       <div className="animate-view-fade min-h-screen">
-        <AdminLoginPage
-          onBackToWebsite={() => navigateTo('public')}
-          onLoginSuccess={() => navigateTo('admin')}
-        />
+        <React.Suspense fallback={<AdminLoadingFallback />}>
+          <AdminLoginPage
+            onBackToWebsite={() => navigateTo('public')}
+            onLoginSuccess={() => navigateTo('admin')}
+          />
+        </React.Suspense>
       </div>
     );
   }
@@ -196,9 +215,11 @@ function AppContent() {
   if (currentView === 'admin' && isAuthorizedAdmin) {
     return (
       <div className="animate-view-fade min-h-screen">
-        <AdminDashboardLayout
-          onViewWebsite={() => navigateTo('public')}
-        />
+        <React.Suspense fallback={<AdminLoadingFallback />}>
+          <AdminDashboardLayout
+            onViewWebsite={() => navigateTo('public')}
+          />
+        </React.Suspense>
       </div>
     );
   }

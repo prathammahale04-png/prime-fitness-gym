@@ -299,10 +299,32 @@ async function applyPaymentToMember(memberId: string, amount: number) {
   }
 }
 
+// High-speed In-Memory SWR Caches for Admin Modules (30 seconds TTL)
+const CACHE_TTL_MS = 30000;
+
+let memoryPaymentsCache: { data: PaymentRecord[]; timestamp: number } | null = null;
+let memoryCheckinsCache: { data: CheckInRecord[]; timestamp: number } | null = null;
+let memoryEnquiriesCache: { data: GetEnquiriesResult; timestamp: number } | null = null;
+let memoryTrainersCache: { data: TrainerRecord[]; timestamp: number } | null = null;
+
+export function invalidateGymPlatformCache(type?: 'payments' | 'checkins' | 'enquiries' | 'trainers'): void {
+  if (!type || type === 'payments') memoryPaymentsCache = null;
+  if (!type || type === 'checkins') memoryCheckinsCache = null;
+  if (!type || type === 'enquiries') memoryEnquiriesCache = null;
+  if (!type || type === 'trainers') memoryTrainersCache = null;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('primefitness:data-changed'));
+  }
+}
+
 /* =========================================================================
    PAYMENTS & BILLING
 ========================================================================= */
-export async function getPayments(sessionOverride?: any): Promise<PaymentRecord[]> {
+export async function getPayments(sessionOverride?: any, forceRefresh: boolean = false): Promise<PaymentRecord[]> {
+  if (!forceRefresh && memoryPaymentsCache && Date.now() - memoryPaymentsCache.timestamp < CACHE_TTL_MS) {
+    return memoryPaymentsCache.data;
+  }
+
   if (isSupabaseConfigured()) {
     try {
       let session = sessionOverride;
@@ -311,7 +333,9 @@ export async function getPayments(sessionOverride?: any): Promise<PaymentRecord[
         session = sessionData?.session;
       }
       if (!session?.user) {
-        return getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
+        const fallback = getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
+        memoryPaymentsCache = { data: fallback, timestamp: Date.now() };
+        return fallback;
       }
 
       const client = session?.access_token ? getAuthenticatedClient(session.access_token) : supabase;
@@ -321,8 +345,9 @@ export async function getPayments(sessionOverride?: any): Promise<PaymentRecord[
         .order('created_at', { ascending: false });
 
       if (!error && data !== null) {
-        // Return genuine records from database, even if table is currently empty
-        return data as PaymentRecord[];
+        const records = data as PaymentRecord[];
+        memoryPaymentsCache = { data: records, timestamp: Date.now() };
+        return records;
       }
       if (error) {
         console.warn('Payments fetch fallback to local cache:', error.message);
@@ -331,7 +356,9 @@ export async function getPayments(sessionOverride?: any): Promise<PaymentRecord[
       // fallback
     }
   }
-  return getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
+  const fallback = getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
+  memoryPaymentsCache = { data: fallback, timestamp: Date.now() };
+  return fallback;
 }
 
 export async function recordPayment(
@@ -401,6 +428,7 @@ export async function recordPayment(
         const local = getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
         local.unshift(data as PaymentRecord);
         setStored(STORAGE_KEYS.PAYMENTS, local);
+        invalidateGymPlatformCache('payments');
         return { success: true, data: data as PaymentRecord, isLive: true };
       }
 
@@ -419,6 +447,7 @@ export async function recordPayment(
   const local = getStored<PaymentRecord>(STORAGE_KEYS.PAYMENTS, []);
   local.unshift(localPayload);
   setStored(STORAGE_KEYS.PAYMENTS, local);
+  invalidateGymPlatformCache('payments');
 
   return {
     success: true,
@@ -431,7 +460,11 @@ export async function recordPayment(
 /* =========================================================================
    CHECK-INS & ATTENDANCE
 ========================================================================= */
-export async function getCheckIns(sessionOverride?: any): Promise<CheckInRecord[]> {
+export async function getCheckIns(sessionOverride?: any, forceRefresh: boolean = false): Promise<CheckInRecord[]> {
+  if (!forceRefresh && memoryCheckinsCache && Date.now() - memoryCheckinsCache.timestamp < CACHE_TTL_MS) {
+    return memoryCheckinsCache.data;
+  }
+
   if (isSupabaseConfigured()) {
     try {
       let session = sessionOverride;
@@ -446,7 +479,9 @@ export async function getCheckIns(sessionOverride?: any): Promise<CheckInRecord[
         .order('checked_in_at', { ascending: false });
 
       if (!error && data !== null) {
-        return data as CheckInRecord[];
+        const records = data as CheckInRecord[];
+        memoryCheckinsCache = { data: records, timestamp: Date.now() };
+        return records;
       }
       if (error) {
         console.warn('Checkins fetch fallback to local cache:', error.message);
@@ -455,7 +490,9 @@ export async function getCheckIns(sessionOverride?: any): Promise<CheckInRecord[
       // fallback
     }
   }
-  return getStored<CheckInRecord>(STORAGE_KEYS.CHECKINS, []);
+  const fallback = getStored<CheckInRecord>(STORAGE_KEYS.CHECKINS, []);
+  memoryCheckinsCache = { data: fallback, timestamp: Date.now() };
+  return fallback;
 }
 
 export async function recordCheckIn(
@@ -509,6 +546,7 @@ export async function recordCheckIn(
         const local = getStored<CheckInRecord>(STORAGE_KEYS.CHECKINS, []);
         local.unshift(data as CheckInRecord);
         setStored(STORAGE_KEYS.CHECKINS, local);
+        invalidateGymPlatformCache('checkins');
         return { success: true, data: data as CheckInRecord, isLive: true };
       }
       if (error) {
@@ -522,12 +560,9 @@ export async function recordCheckIn(
   const local = getStored<CheckInRecord>(STORAGE_KEYS.CHECKINS, []);
   local.unshift(localPayload);
   setStored(STORAGE_KEYS.CHECKINS, local);
-  return {
-    success: true,
-    data: localPayload,
-    isLive: false,
-    error: 'Check-in saved locally. Run migration 000 in Supabase to sync to database.',
-  };
+  invalidateGymPlatformCache('checkins');
+
+  return { success: true, data: localPayload, isLive: false };
 }
 
 /* =========================================================================
@@ -539,7 +574,11 @@ export type GetEnquiriesResult = EnquiryRecord[] & {
   error?: string;
 };
 
-export async function getEnquiries(sessionOverride?: any): Promise<GetEnquiriesResult> {
+export async function getEnquiries(sessionOverride?: any, forceRefresh: boolean = false): Promise<GetEnquiriesResult> {
+  if (!forceRefresh && memoryEnquiriesCache && Date.now() - memoryEnquiriesCache.timestamp < CACHE_TTL_MS) {
+    return memoryEnquiriesCache.data;
+  }
+
   if (isSupabaseConfigured()) {
     try {
       let session = sessionOverride;
@@ -558,36 +597,44 @@ export async function getEnquiries(sessionOverride?: any): Promise<GetEnquiriesR
 
       if (!error && data !== null) {
         const records = data as EnquiryRecord[];
-        return Object.assign([...records], {
+        const res = Object.assign([...records], {
           enquiries: records,
           isLive: true,
         }) as GetEnquiriesResult;
+        memoryEnquiriesCache = { data: res, timestamp: Date.now() };
+        return res;
       }
       if (error) {
         console.warn('Enquiries fetch fallback to local cache:', error.message);
         const cached = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
-        return Object.assign([...cached], {
+        const res = Object.assign([...cached], {
           enquiries: cached,
           isLive: false,
           error: error.message,
         }) as GetEnquiriesResult;
+        memoryEnquiriesCache = { data: res, timestamp: Date.now() };
+        return res;
       }
     } catch (e: any) {
       console.warn('Enquiries fetch exception:', e);
       const cached = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
-      return Object.assign([...cached], {
+      const res = Object.assign([...cached], {
         enquiries: cached,
         isLive: false,
         error: e?.message || 'Error fetching enquiries',
       }) as GetEnquiriesResult;
+      memoryEnquiriesCache = { data: res, timestamp: Date.now() };
+      return res;
     }
   }
 
   const cached = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
-  return Object.assign([...cached], {
+  const res = Object.assign([...cached], {
     enquiries: cached,
     isLive: false,
   }) as GetEnquiriesResult;
+  memoryEnquiriesCache = { data: res, timestamp: Date.now() };
+  return res;
 }
 
 export async function addEnquiry(
@@ -632,6 +679,7 @@ export async function addEnquiry(
           const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
           local.unshift(data as EnquiryRecord);
           setStored(STORAGE_KEYS.ENQUIRIES, local);
+          invalidateGymPlatformCache('enquiries');
           return { success: true, data: data as EnquiryRecord, isLive: true };
         }
         if (error) {
@@ -651,6 +699,7 @@ export async function addEnquiry(
           const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
           local.unshift(localPayload);
           setStored(STORAGE_KEYS.ENQUIRIES, local);
+          invalidateGymPlatformCache('enquiries');
           return { success: true, data: localPayload, isLive: true };
         }
 
@@ -669,6 +718,7 @@ export async function addEnquiry(
   const local = getStored<EnquiryRecord>(STORAGE_KEYS.ENQUIRIES, []);
   local.unshift(localPayload);
   setStored(STORAGE_KEYS.ENQUIRIES, local);
+  invalidateGymPlatformCache('enquiries');
   return {
     success: true,
     data: localPayload,
@@ -714,6 +764,7 @@ export async function updateEnquiryStatus(
     }
   }
 
+  invalidateGymPlatformCache('enquiries');
   return { success: true };
 }
 
@@ -912,7 +963,11 @@ export async function saveChallenge(challenge: Omit<FitnessChallengeRecord, 'id'
 /* =========================================================================
    TRAINERS (AUTHENTICATED CRUD ON BASE TABLE public.trainers)
 ========================================================================= */
-export async function getTrainers(): Promise<TrainerRecord[]> {
+export async function getTrainers(forceRefresh: boolean = false): Promise<TrainerRecord[]> {
+  if (!forceRefresh && memoryTrainersCache && Date.now() - memoryTrainersCache.timestamp < CACHE_TTL_MS) {
+    return memoryTrainersCache.data;
+  }
+
   if (isSupabaseConfigured()) {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -926,7 +981,9 @@ export async function getTrainers(): Promise<TrainerRecord[]> {
         .order('created_at', { ascending: true });
 
       if (!error && data !== null && data.length > 0) {
-        return data as TrainerRecord[];
+        const records = data as TrainerRecord[];
+        memoryTrainersCache = { data: records, timestamp: Date.now() };
+        return records;
       }
 
       // If user is unauthenticated or base table query is restricted, fallback to public projection view
@@ -936,19 +993,23 @@ export async function getTrainers(): Promise<TrainerRecord[]> {
         .order('name', { ascending: true });
 
       if (!pubErr && pubData !== null && pubData.length > 0) {
-        return pubData.map((p: any) => ({
+        const records = pubData.map((p: any) => ({
           ...p,
           phone: p.phone || '+91 94222 19019',
           email: p.email || 'primefitnessjalgaon@gmail.com',
           active_members_count: p.active_members_count || 0,
           is_active: true,
         })) as TrainerRecord[];
+        memoryTrainersCache = { data: records, timestamp: Date.now() };
+        return records;
       }
     } catch (e) {
       console.warn('Trainers fetch fallback:', e);
     }
   }
-  return getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
+  const fallback = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
+  memoryTrainersCache = { data: fallback, timestamp: Date.now() };
+  return fallback;
 }
 
 export async function saveTrainer(
@@ -988,6 +1049,7 @@ export async function saveTrainer(
         const local = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
         local.unshift(data as TrainerRecord);
         setStored(STORAGE_KEYS.TRAINERS, local);
+        invalidateGymPlatformCache('trainers');
         return { success: true, data: data as TrainerRecord, isLive: true };
       }
       if (error) {
@@ -1003,6 +1065,7 @@ export async function saveTrainer(
   const local = getStored<TrainerRecord>(STORAGE_KEYS.TRAINERS, INITIAL_TRAINERS);
   local.unshift(localPayload);
   setStored(STORAGE_KEYS.TRAINERS, local);
+  invalidateGymPlatformCache('trainers');
   return { success: true, data: localPayload, isLive: false };
 }
 
@@ -1049,6 +1112,7 @@ export async function updateTrainer(
           local[idx] = data as TrainerRecord;
           setStored(STORAGE_KEYS.TRAINERS, local);
         }
+        invalidateGymPlatformCache('trainers');
         return { success: true, data: data as TrainerRecord };
       }
       if (error) {
@@ -1061,6 +1125,7 @@ export async function updateTrainer(
     }
   }
 
+  invalidateGymPlatformCache('trainers');
   return { success: true, data: updatedRecord };
 }
 
@@ -1078,6 +1143,7 @@ export async function deleteTrainer(id: string): Promise<{ success: boolean; err
         : supabase;
 
       const { error } = await client.from('trainers').delete().eq('id', id);
+      invalidateGymPlatformCache('trainers');
       if (error) {
         console.error('Supabase trainers delete error:', error.message);
         return { success: false, error: error.message };
@@ -1088,6 +1154,7 @@ export async function deleteTrainer(id: string): Promise<{ success: boolean; err
     }
   }
 
+  invalidateGymPlatformCache('trainers');
   return { success: true };
 }
 

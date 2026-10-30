@@ -100,13 +100,19 @@ export const AntiqueTrainers: React.FC<AntiqueTrainersProps> = ({ onSelectTraine
                       : 'border border-neutral-800 group-hover:border-neutral-600'
                   }`}
                 >
-                  <img
-                    src={trainer.image}
-                    alt={trainer.name}
-                    className="w-full h-full object-cover object-top filter grayscale contrast-125 transition-transform duration-700 ease-out group-hover:scale-105"
-                    referrerPolicy="no-referrer"
-                    loading="lazy"
-                  />
+                  <picture className="w-full h-full block">
+                    {trainer.imageWebp && <source srcSet={trainer.imageWebp} type="image/webp" />}
+                    <img
+                      src={trainer.image}
+                      alt={trainer.name}
+                      width={300}
+                      height={400}
+                      className="w-full h-full object-cover object-top filter grayscale contrast-125 transition-transform duration-700 ease-out group-hover:scale-105"
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </picture>
                   {!isFeatured && (
                     <div className="absolute inset-0 bg-black/25 sm:bg-black/30 group-hover:bg-transparent transition-colors duration-300" />
                   )}

@@ -774,16 +774,21 @@ export const MembersView: React.FC<MembersViewProps> = ({
               </button>
             </div>
 
-            {/* Internally Scrollable Form Body */}
-            <div className="flex-1 overflow-y-auto overscroll-contain scroll-smooth px-5 sm:px-8 py-5 sm:py-6 [-webkit-overflow-scrolling:touch]">
-              {formError && (
-                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>{formError}</span>
-                </div>
-              )}
+            {/* Form wrapping scrollable content and separate persistent action footer */}
+            <form
+              id="add-member-form"
+              onSubmit={handleAddSubmit}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+            >
+              {/* Internally Scrollable Form Body */}
+              <div className="flex-1 overflow-y-auto overscroll-contain scroll-smooth px-5 sm:px-8 py-5 sm:py-6 space-y-4 [-webkit-overflow-scrolling:touch]">
+                {formError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{formError}</span>
+                  </div>
+                )}
 
-              <form onSubmit={handleAddSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
@@ -844,36 +849,53 @@ export const MembersView: React.FC<MembersViewProps> = ({
                   </div>
                 </div>
 
-                {/* Package Selector */}
+                {/* 2-Column Membership Package Grid on Mobile & Desktop */}
                 <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Membership Package *
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {packages.map((pkg) => (
-                      <button
-                        type="button"
-                        key={pkg.id}
-                        onClick={() => handlePkgSelect(pkg.id)}
-                        className={`p-3 text-left border transition-all cursor-pointer ${
-                          selectedPkgId === pkg.id
-                            ? 'bg-[#f36b22]/10 border-[#f36b22] text-white shadow-xs'
-                            : 'bg-[#0e1014] border-neutral-800 text-neutral-400 hover:border-neutral-700'
-                        }`}
-                      >
-                        <div className="font-headline font-bold text-xs uppercase text-white truncate">
-                          {pkg.name}
-                        </div>
-                        <div className="text-xs font-mono text-[#f36b22] mt-0.5">
-                          ₹{pkg.price.toLocaleString('en-IN')} · {pkg.duration_days} Days
-                        </div>
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300">
+                      Membership Package *
+                    </label>
+                    <span className="text-[10px] font-mono text-neutral-500 uppercase">
+                      {packages.length} Plans
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {packages.map((pkg, index) => {
+                      const isSelected = selectedPkgId === pkg.id;
+                      // When total packages is odd (e.g. 5 packages), make the 5th package span 2 columns
+                      const isOddLast = index === packages.length - 1 && packages.length % 2 !== 0;
+
+                      return (
+                        <button
+                          type="button"
+                          key={pkg.id}
+                          onClick={() => handlePkgSelect(pkg.id)}
+                          className={`p-2.5 sm:p-3 text-left border transition-all cursor-pointer flex flex-col justify-between min-h-[58px] sm:min-h-[64px] ${
+                            isOddLast ? 'col-span-2' : ''
+                          } ${
+                            isSelected
+                              ? 'bg-[#f36b22]/10 border-[#f36b22] text-white shadow-xs ring-1 ring-[#f36b22]/40'
+                              : 'bg-[#0e1014] border-neutral-800 text-neutral-400 hover:border-neutral-700 hover:text-neutral-200'
+                          }`}
+                        >
+                          <div className="font-headline font-bold text-xs uppercase text-white truncate w-full">
+                            {pkg.name}
+                          </div>
+                          <div className="text-[11px] sm:text-xs font-mono text-[#f36b22] mt-1 font-semibold flex items-center justify-between">
+                            <span>₹{pkg.price.toLocaleString('en-IN')}</span>
+                            <span className="text-[10px] text-neutral-400 font-normal">
+                              {pkg.duration_days} Days
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* Dates & Billing */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                   <div>
                     <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
                       Start Date *
@@ -936,26 +958,28 @@ export const MembersView: React.FC<MembersViewProps> = ({
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
                   />
                 </div>
+              </div>
 
-                <div className="flex justify-end gap-3 pt-4 pb-1 border-t border-neutral-800">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddOpen(false)}
-                    disabled={isSubmitting}
-                    className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? 'Registering...' : 'Complete Registration'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              {/* 3. Separate Fixed Action Footer (Always Visible at Bottom) */}
+              <div className="shrink-0 flex items-center justify-end gap-3 px-5 sm:px-8 py-3.5 sm:py-4 border-t border-neutral-800 bg-[#14171d] shadow-xl pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+                <button
+                  type="button"
+                  onClick={() => setIsAddOpen(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="add-member-form"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50 shadow-md shadow-[#f36b22]/20"
+                >
+                  {isSubmitting ? 'Registering...' : 'Complete Registration'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>,
         document.body
@@ -980,6 +1004,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
           >
             <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0 z-10" />
 
+            {/* Persistent Modal Header */}
             <div className="shrink-0 flex items-center justify-between px-5 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-neutral-800 bg-[#14171d]">
               <div>
                 <h3
@@ -1003,8 +1028,13 @@ export const MembersView: React.FC<MembersViewProps> = ({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6 py-5 sm:py-6 [-webkit-overflow-scrolling:touch]">
-              <form onSubmit={handleRenewSubmit} className="space-y-4">
+            {/* Form wrapping scrollable content and separate persistent action footer */}
+            <form
+              id="renew-member-form"
+              onSubmit={handleRenewSubmit}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+            >
+              <div className="flex-1 overflow-y-auto overscroll-contain scroll-smooth px-5 sm:px-6 py-5 sm:py-6 space-y-4 [-webkit-overflow-scrolling:touch]">
                 <div>
                   <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
                     Select Package
@@ -1059,26 +1089,27 @@ export const MembersView: React.FC<MembersViewProps> = ({
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                   />
                 </div>
+              </div>
 
-                <div className="flex justify-end gap-3 pt-4 pb-1 border-t border-neutral-800">
-                  <button
-                    type="button"
-                    onClick={() => setIsRenewOpen(false)}
-                    disabled={isSubmitting}
-                    className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? 'Processing...' : 'Confirm Renewal'}
-                  </button>
-                </div>
-              </form>
-            </div>
+              {/* Separate Persistent Action Footer for Renew */}
+              <div className="shrink-0 flex items-center justify-end gap-3 px-5 sm:px-6 py-3.5 border-t border-neutral-800 bg-[#14171d] shadow-xl pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+                <button
+                  type="button"
+                  onClick={() => setIsRenewOpen(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50 shadow-md shadow-[#f36b22]/20"
+                >
+                  {isSubmitting ? 'Processing...' : 'Confirm Renewal'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>,
         document.body

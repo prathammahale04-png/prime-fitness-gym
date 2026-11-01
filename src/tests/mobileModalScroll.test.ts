@@ -76,6 +76,18 @@ assert(content.includes('document.body.style.overflow = originalOverflow'), 'Res
 assert(content.includes('window.scrollTo({ top: prevScrollYRef.current'), 'Restores exact scroll position when modal closes');
 assert(content.includes("e.key === 'Escape'"), 'Supports Escape key to dismiss modal when not submitting');
 
+// 7. Verify Persistent Fixed Action Footer and Safe-Area Support
+console.log('\n--- TEST SUITE 7: Persistent Fixed Action Footer & Safe-Area Padding ---');
+assert(content.includes('id="add-member-form"'), 'Form has id="add-member-form" linking body to submission');
+assert(content.includes('border-t border-neutral-800 bg-[#14171d]'), 'Action footer is anchored with high-contrast background and border-t');
+assert(content.includes('pb-[max(0.875rem,env(safe-area-inset-bottom))]'), 'Action footer includes dynamic mobile safe-area inset padding');
+assert(content.includes('form="add-member-form"'), 'Submit button targets the form id from outside the scrollable body');
+
+// 8. Verify Mobile Two-Column Package Grid
+console.log('\n--- TEST SUITE 8: Mobile Two-Column Package Grid ---');
+assert(content.includes('grid grid-cols-2 gap-2'), 'Packages rendered in 2-column grid on mobile to save vertical space');
+assert(content.includes("isOddLast ? 'col-span-2' : ''"), 'Odd 5th package spans both columns (col-span-2) on mobile');
+
 console.log('\n======================================================');
 console.log('ALL MOBILE MODAL & SCROLL AUDIT TESTS PASSED');
 console.log('======================================================\n');

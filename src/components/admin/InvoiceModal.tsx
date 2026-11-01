@@ -102,7 +102,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       {/* Printable A4 Sheet Container */}
       <div
         id="printable-invoice"
-        className="w-full max-w-4xl bg-white text-neutral-900 shadow-2xl rounded-sm p-8 sm:p-12 font-sans border border-neutral-300 print:border-none print:shadow-none print:p-0 print:max-w-none"
+        className="w-full max-w-4xl bg-white text-neutral-900 shadow-2xl rounded-sm p-4 sm:p-8 lg:p-12 font-sans border border-neutral-300 print:border-none print:shadow-none print:p-0 print:max-w-none"
         style={{ minHeight: '270mm' }}
       >
         {/* Invoice Header */}
@@ -228,8 +228,8 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         </div>
 
         {/* Invoice Items Table */}
-        <div className="py-6">
-          <table className="w-full text-left text-xs border-collapse">
+        <div className="py-6 overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse min-w-[500px] sm:min-w-0">
             <thead>
               <tr className="border-b-2 border-neutral-900 text-[10px] font-headline font-black uppercase tracking-wider text-neutral-700 bg-neutral-100/70">
                 <th className="py-2.5 px-3 w-12 text-center">#</th>

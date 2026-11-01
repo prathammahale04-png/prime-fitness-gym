@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { PaymentRecord, PaymentMethod, Member, MembershipPackage } from '../../types/database.types';
 import { getPayments, recordPayment } from '../../services/gymPlatformService';
@@ -25,6 +26,7 @@ import {
 
 export const BillingView: React.FC = () => {
   const { session, loading: authLoading } = useAuth();
+  const [mounted, setMounted] = useState(false);
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
@@ -33,6 +35,10 @@ export const BillingView: React.FC = () => {
   const [methodFilter, setMethodFilter] = useState<'all' | PaymentMethod>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedInvoicePayment, setSelectedInvoicePayment] = useState<PaymentRecord | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Form states
   const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -396,158 +402,191 @@ export const BillingView: React.FC = () => {
       </div>
 
       {/* Record Payment Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
-          <div className="bg-[#14161d] border border-neutral-800 rounded-xl w-full max-w-lg p-6 sm:p-8 relative shadow-2xl">
-            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0 rounded-t-xl" />
+      {isModalOpen && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overscroll-contain overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSubmitting) {
+              setIsModalOpen(false);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="record-payment-modal-title"
+        >
+          <div
+            className="relative w-full max-w-lg bg-[#14161d] border border-neutral-800 shadow-2xl my-auto flex flex-col max-h-[calc(100vh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:max-h-[92dvh] overflow-hidden rounded-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0 z-10" />
 
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
-              <h3 className="font-headline font-black text-lg text-white uppercase tracking-tight">
+            {/* Persistent Modal Header */}
+            <div className="shrink-0 flex items-center justify-between px-5 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-neutral-800 bg-[#14161d]">
+              <h3
+                id="record-payment-modal-title"
+                className="font-headline font-black text-lg text-white uppercase tracking-tight"
+              >
                 Record Payment Transaction
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-neutral-400 hover:text-white">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                disabled={isSubmitting}
+                className="p-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close dialog"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {errorMsg && (
-              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
+            {/* Form wrapping scrollable content and separate persistent action footer */}
+            <form
+              id="record-payment-form"
+              onSubmit={handleSubmit}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+            >
+              <div className="flex-1 overflow-y-auto overscroll-contain scroll-smooth px-5 sm:px-6 py-5 sm:py-6 space-y-4 [-webkit-overflow-scrolling:touch]">
+                {errorMsg && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
 
-            <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                  Select Registered Member (or type name below)
-                </label>
-                <select
-                  value={selectedMemberId}
-                  onChange={handleMemberSelect}
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                >
-                  <option value="">-- Choose Member or Manual Entry --</option>
-                  {members.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.full_name} ({m.member_code}) — {m.package_name || 'Standard'} {m.balance_due > 0 ? `[₹${m.balance_due} Due]` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {!selectedMemberId && (
                 <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                    Member Name (Manual) *
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Select Registered Member (or type name below)
                   </label>
-                  <input
-                    type="text"
-                    value={customMemberName}
-                    onChange={(e) => setCustomMemberName(e.target.value)}
-                    placeholder="e.g. Rahul Patil"
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                  />
+                  <select
+                    value={selectedMemberId}
+                    onChange={handleMemberSelect}
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                  >
+                    <option value="">-- Choose Member or Manual Entry --</option>
+                    {members.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.full_name} ({m.member_code}) — {m.package_name || 'Standard'} {m.balance_due > 0 ? `[₹${m.balance_due} Due]` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                    Amount Received (₹ INR) *
-                  </label>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#f36b22] font-bold text-xs">
-                      ₹
-                    </span>
+                {!selectedMemberId && (
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Member Name (Manual) *
+                    </label>
                     <input
-                      type="number"
-                      value={amount}
-                      onChange={(e) => setAmount(Number(e.target.value))}
-                      min={1}
+                      type="text"
+                      value={customMemberName}
+                      onChange={(e) => setCustomMemberName(e.target.value)}
+                      placeholder="e.g. Rahul Patil"
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Amount Received (₹ INR) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#f36b22] font-bold text-xs">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        value={amount}
+                        onChange={(e) => setAmount(Number(e.target.value))}
+                        min={1}
+                        required
+                        className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Payment Method *
+                    </label>
+                    <select
+                      value={method}
+                      onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    >
+                      <option value="upi">UPI / QR Code</option>
+                      <option value="cash">Cash (Front Desk)</option>
+                      <option value="card">Debit / Credit Card</option>
+                      <option value="bank_transfer">Net Banking / NEFT</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Transaction / Reference ID
+                    </label>
+                    <input
+                      type="text"
+                      value={referenceId}
+                      onChange={(e) => setReferenceId(e.target.value)}
+                      placeholder="e.g. UPI Ref / Cheque No"
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Payment Date
+                    </label>
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
                       required
-                      className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                    Payment Method *
-                  </label>
-                  <select
-                    value={method}
-                    onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                  >
-                    <option value="upi">UPI / QR Code</option>
-                    <option value="cash">Cash (Front Desk)</option>
-                    <option value="card">Debit / Credit Card</option>
-                    <option value="bank_transfer">Net Banking / NEFT</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                    Transaction / Reference ID
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Notes
                   </label>
                   <input
                     type="text"
-                    value={referenceId}
-                    onChange={(e) => setReferenceId(e.target.value)}
-                    placeholder="e.g. UPI Ref / Cheque No"
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                    Payment Date
-                  </label>
-                  <input
-                    type="date"
-                    value={paymentDate}
-                    onChange={(e) => setPaymentDate(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="e.g. Quarterly membership renewal installment"
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-neutral-300 mb-1.5">
-                  Notes
-                </label>
-                <input
-                  type="text"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="e.g. Quarterly membership renewal installment"
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-neutral-800">
+              {/* Separate Persistent Action Footer */}
+              <div className="shrink-0 flex items-center justify-end gap-3 px-5 sm:px-6 py-3.5 border-t border-neutral-800 bg-[#14161d] shadow-xl pb-[max(0.875rem,env(safe-area-inset-bottom))]">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 border border-neutral-700 rounded-lg text-neutral-300 text-xs font-medium hover:bg-neutral-800 transition-colors cursor-pointer"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-bold uppercase rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50 shadow-md shadow-[#f36b22]/20"
                 >
                   {isSubmitting ? 'Recording...' : 'Confirm Payment'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Official A4 Print-Ready Tax Invoice Modal */}

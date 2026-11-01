@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { MembershipPackage, PackageDurationType } from '../../types/database.types';
 import { getPackages, createPackage, togglePackageActive, updatePackage } from '../../services/packageService';
@@ -18,11 +19,16 @@ import {
 export const PackagesView: React.FC = () => {
   const { session, profile, loading: authLoading } = useAuth();
   const canManagePackages = profile?.role === 'owner' || profile?.role === 'staff';
+  const [mounted, setMounted] = useState(false);
   const [packages, setPackages] = useState<MembershipPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLive, setIsLive] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPkg, setEditingPkg] = useState<MembershipPackage | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Form states
   const [name, setName] = useState('');
@@ -276,128 +282,157 @@ export const PackagesView: React.FC = () => {
       )}
 
       {/* Package Form Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
-          <div className="bg-[#14171d] border border-neutral-800 w-full max-w-lg p-6 sm:p-8 relative shadow-2xl">
-            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0" />
+      {isModalOpen && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overscroll-contain overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSubmitting) {
+              setIsModalOpen(false);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="package-modal-title"
+        >
+          <div
+            className="relative w-full max-w-lg bg-[#14171d] border border-neutral-800 shadow-2xl my-auto flex flex-col max-h-[calc(100vh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:max-h-[92dvh] overflow-hidden rounded-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0 z-10" />
 
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
-              <h3 className="font-headline font-black text-lg text-white uppercase tracking-tight">
+            {/* Persistent Modal Header */}
+            <div className="shrink-0 flex items-center justify-between px-5 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-neutral-800 bg-[#14171d]">
+              <h3
+                id="package-modal-title"
+                className="font-headline font-black text-lg text-white uppercase tracking-tight"
+              >
                 {editingPkg ? 'Edit Membership Package' : 'Create New Package'}
               </h3>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="p-1 text-neutral-400 hover:text-white"
+                disabled={isSubmitting}
+                className="p-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {errorMsg && (
-              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Package Name *
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. 3 MONTHS INTENSIVE"
-                  required
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Duration Tier
-                  </label>
-                  <select
-                    value={durationType}
-                    onChange={(e) => handleDurationTypeChange(e.target.value as PackageDurationType)}
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                  >
-                    <option value="monthly">Monthly (30 Days)</option>
-                    <option value="quarterly">Quarterly (90 Days)</option>
-                    <option value="half_yearly">Half Yearly (180 Days)</option>
-                    <option value="yearly">Yearly (365 Days)</option>
-                    <option value="custom">Custom Days</option>
-                  </select>
-                </div>
+            {/* Form wrapping scrollable content and separate persistent action footer */}
+            <form
+              id="package-form"
+              onSubmit={handleSubmit}
+              className="flex-1 flex flex-col min-h-0 overflow-hidden"
+            >
+              <div className="flex-1 overflow-y-auto overscroll-contain scroll-smooth px-5 sm:px-6 py-5 sm:py-6 space-y-4 [-webkit-overflow-scrolling:touch]">
+                {errorMsg && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Days Active *
+                    Package Name *
                   </label>
                   <input
-                    type="number"
-                    value={durationDays}
-                    onChange={(e) => setDurationDays(Number(e.target.value))}
-                    min={1}
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. 3 MONTHS INTENSIVE"
                     required
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Fee Amount (₹ INR) *
-                </label>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#f36b22] font-bold text-xs">
-                    ₹
-                  </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Duration Tier
+                    </label>
+                    <select
+                      value={durationType}
+                      onChange={(e) => handleDurationTypeChange(e.target.value as PackageDurationType)}
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    >
+                      <option value="monthly">Monthly (30 Days)</option>
+                      <option value="quarterly">Quarterly (90 Days)</option>
+                      <option value="half_yearly">Half Yearly (180 Days)</option>
+                      <option value="yearly">Yearly (365 Days)</option>
+                      <option value="custom">Custom Days</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Days Active *
+                    </label>
+                    <input
+                      type="number"
+                      value={durationDays}
+                      onChange={(e) => setDurationDays(Number(e.target.value))}
+                      min={1}
+                      required
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Fee Amount (₹ INR) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-[#f36b22] font-bold text-xs">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      value={price}
+                      onChange={(e) => setPrice(Number(e.target.value))}
+                      min={0}
+                      step={100}
+                      required
+                      className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Brief Description
+                  </label>
                   <input
-                    type="number"
-                    value={price}
-                    onChange={(e) => setPrice(Number(e.target.value))}
-                    min={0}
-                    step={100}
-                    required
-                    className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    type="text"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="e.g. Progressive overload quarterly cycle"
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Included Features (One per line)
+                  </label>
+                  <textarea
+                    value={featuresText}
+                    onChange={(e) => setFeaturesText(e.target.value)}
+                    rows={4}
+                    placeholder="Full 4000+ Sq.Ft. access&#10;Locker & shower facilities"
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Brief Description
-                </label>
-                <input
-                  type="text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Progressive overload quarterly cycle"
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Included Features (One per line)
-                </label>
-                <textarea
-                  value={featuresText}
-                  onChange={(e) => setFeaturesText(e.target.value)}
-                  rows={4}
-                  placeholder="Full 4000+ Sq.Ft. access&#10;Locker & shower facilities"
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-neutral-800">
+              {/* Separate Persistent Action Footer */}
+              <div className="shrink-0 flex items-center justify-end gap-3 px-5 sm:px-6 py-3.5 border-t border-neutral-800 bg-[#14171d] shadow-xl pb-[max(0.875rem,env(safe-area-inset-bottom))]">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
+                  disabled={isSubmitting}
                   className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
                 >
                   Cancel
@@ -405,14 +440,15 @@ export const PackagesView: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50 shadow-md shadow-[#f36b22]/20"
                 >
                   {isSubmitting ? 'Saving...' : editingPkg ? 'Update Package' : 'Create Package'}
                 </button>
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

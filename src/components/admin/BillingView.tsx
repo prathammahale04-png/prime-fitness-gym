@@ -43,7 +43,7 @@ export const BillingView: React.FC = () => {
   // Form states
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [customMemberName, setCustomMemberName] = useState('');
-  const [amount, setAmount] = useState<number>(1500);
+  const [amount, setAmount] = useState<string>('1500');
   const [method, setMethod] = useState<PaymentMethod>('upi');
   const [referenceId, setReferenceId] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -125,11 +125,11 @@ export const BillingView: React.FC = () => {
     if (member) {
       setSelectedMemberId(member.id);
       setCustomMemberName(member.full_name);
-      setAmount(member.balance_due > 0 ? member.balance_due : 1500);
+      setAmount(String(member.balance_due > 0 ? member.balance_due : 1500));
     } else {
       setSelectedMemberId('');
       setCustomMemberName('');
-      setAmount(1500);
+      setAmount('1500');
     }
     setMethod('upi');
     setReferenceId('');
@@ -145,7 +145,7 @@ export const BillingView: React.FC = () => {
     const m = members.find(mem => mem.id === mId);
     if (m) {
       setCustomMemberName(m.full_name);
-      if (m.balance_due > 0) setAmount(m.balance_due);
+      if (m.balance_due > 0) setAmount(String(m.balance_due));
     } else {
       setCustomMemberName('');
     }
@@ -153,7 +153,8 @@ export const BillingView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!selectedMemberId && !customMemberName.trim()) || amount <= 0) {
+    const parsedAmount = amount.trim() === '' ? NaN : parseFloat(amount);
+    if ((!selectedMemberId && !customMemberName.trim()) || isNaN(parsedAmount) || parsedAmount <= 0) {
       setErrorMsg('Please enter a valid member name and payment amount.');
       return;
     }
@@ -168,7 +169,7 @@ export const BillingView: React.FC = () => {
       {
         member_id: selectedMemberId || null,
         member_name: memberName,
-        amount: Number(amount),
+        amount: parsedAmount,
         payment_method: method,
         reference_id: referenceId.trim() || null,
         payment_date: paymentDate,
@@ -498,9 +499,11 @@ export const BillingView: React.FC = () => {
                       <input
                         type="number"
                         value={amount}
-                        onChange={(e) => setAmount(Number(e.target.value))}
+                        onChange={(e) => setAmount(e.target.value)}
                         min={1}
+                        step="any"
                         required
+                        placeholder="e.g. 1500"
                         className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700/80 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                       />
                     </div>

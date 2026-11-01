@@ -33,8 +33,8 @@ export const PackagesView: React.FC = () => {
   // Form states
   const [name, setName] = useState('');
   const [durationType, setDurationType] = useState<PackageDurationType>('monthly');
-  const [durationDays, setDurationDays] = useState(30);
-  const [price, setPrice] = useState(1500);
+  const [durationDays, setDurationDays] = useState<string>('30');
+  const [price, setPrice] = useState<string>('1500');
   const [description, setDescription] = useState('');
   const [featuresText, setFeaturesText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,8 +58,8 @@ export const PackagesView: React.FC = () => {
     setEditingPkg(null);
     setName('');
     setDurationType('monthly');
-    setDurationDays(30);
-    setPrice(1500);
+    setDurationDays('30');
+    setPrice('1500');
     setDescription('');
     setFeaturesText('Full 4000+ Sq.Ft. gym access\nGeneral floor supervision\nLocker & changing room');
     setErrorMsg(null);
@@ -70,8 +70,8 @@ export const PackagesView: React.FC = () => {
     setEditingPkg(pkg);
     setName(pkg.name);
     setDurationType(pkg.duration_type);
-    setDurationDays(pkg.duration_days);
-    setPrice(pkg.price);
+    setDurationDays(String(pkg.duration_days));
+    setPrice(String(pkg.price));
     setDescription(pkg.description || '');
     setFeaturesText(pkg.features.join('\n'));
     setErrorMsg(null);
@@ -80,15 +80,18 @@ export const PackagesView: React.FC = () => {
 
   const handleDurationTypeChange = (type: PackageDurationType) => {
     setDurationType(type);
-    if (type === 'monthly') setDurationDays(30);
-    else if (type === 'quarterly') setDurationDays(90);
-    else if (type === 'half_yearly') setDurationDays(180);
-    else if (type === 'yearly') setDurationDays(365);
+    if (type === 'monthly') setDurationDays('30');
+    else if (type === 'quarterly') setDurationDays('90');
+    else if (type === 'half_yearly') setDurationDays('180');
+    else if (type === 'yearly') setDurationDays('365');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || price < 0 || durationDays <= 0) {
+    const parsedPrice = price.trim() === '' ? NaN : parseFloat(price);
+    const parsedDuration = durationDays.trim() === '' ? NaN : parseInt(durationDays, 10);
+
+    if (!name.trim() || isNaN(parsedPrice) || parsedPrice < 0 || isNaN(parsedDuration) || parsedDuration <= 0) {
       setErrorMsg('Please fill in valid package name, price, and duration.');
       return;
     }
@@ -107,8 +110,8 @@ export const PackagesView: React.FC = () => {
         {
           name: name.trim(),
           duration_type: durationType,
-          duration_days: Number(durationDays),
-          price: Number(price),
+          duration_days: parsedDuration,
+          price: parsedPrice,
           description: description.trim() || null,
           features,
         },
@@ -126,8 +129,8 @@ export const PackagesView: React.FC = () => {
         {
           name: name.trim(),
           duration_type: durationType,
-          duration_days: Number(durationDays),
-          price: Number(price),
+          duration_days: parsedDuration,
+          price: parsedPrice,
           description: description.trim() || null,
           features,
           is_active: true,
@@ -372,10 +375,11 @@ export const PackagesView: React.FC = () => {
                     <input
                       type="number"
                       value={durationDays}
-                      onChange={(e) => setDurationDays(Number(e.target.value))}
+                      onChange={(e) => setDurationDays(e.target.value)}
                       min={1}
                       required
-                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                      placeholder="e.g. 30"
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                     />
                   </div>
                 </div>
@@ -391,11 +395,12 @@ export const PackagesView: React.FC = () => {
                     <input
                       type="number"
                       value={price}
-                      onChange={(e) => setPrice(Number(e.target.value))}
+                      onChange={(e) => setPrice(e.target.value)}
                       min={0}
-                      step={100}
+                      step="any"
                       required
-                      className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                      placeholder="e.g. 1500"
+                      className="w-full pl-8 pr-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                     />
                   </div>
                 </div>

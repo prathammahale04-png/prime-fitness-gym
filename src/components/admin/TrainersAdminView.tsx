@@ -39,7 +39,7 @@ export const TrainersAdminView: React.FC = () => {
   const [phone, setPhone] = useState('+91 98220 ');
   const [email, setEmail] = useState('');
   const [bio, setBio] = useState('');
-  const [activeMembersCount, setActiveMembersCount] = useState<number>(0);
+  const [activeMembersCount, setActiveMembersCount] = useState<string>('0');
   const [isActive, setIsActive] = useState<boolean>(true);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -70,7 +70,7 @@ export const TrainersAdminView: React.FC = () => {
     setPhone('+91 94222 19019');
     setEmail('coach@primefitness.in');
     setBio('');
-    setActiveMembersCount(0);
+    setActiveMembersCount('0');
     setIsActive(true);
     setErrorNotice(null);
     setIsModalOpen(true);
@@ -84,7 +84,7 @@ export const TrainersAdminView: React.FC = () => {
     setPhone(t.phone);
     setEmail(t.email);
     setBio(t.bio || '');
-    setActiveMembersCount(t.active_members_count || 0);
+    setActiveMembersCount(String(t.active_members_count ?? 0));
     setIsActive(t.is_active);
     setErrorNotice(null);
     setIsModalOpen(true);
@@ -93,6 +93,9 @@ export const TrainersAdminView: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    const parsedCount = activeMembersCount.trim() === '' ? 0 : parseInt(activeMembersCount, 10);
+    const validCount = isNaN(parsedCount) || parsedCount < 0 ? 0 : parsedCount;
 
     setIsSubmitting(true);
     setErrorNotice(null);
@@ -106,7 +109,7 @@ export const TrainersAdminView: React.FC = () => {
           specialty: specialty.trim(),
           phone: phone.trim(),
           email: email.trim(),
-          active_members_count: Number(activeMembersCount) || 0,
+          active_members_count: validCount,
           is_active: isActive,
           bio: bio.trim() || undefined,
         });
@@ -127,7 +130,7 @@ export const TrainersAdminView: React.FC = () => {
           specialty: specialty.trim(),
           phone: phone.trim(),
           email: email.trim(),
-          active_members_count: Number(activeMembersCount) || 0,
+          active_members_count: validCount,
           is_active: isActive,
           bio: bio.trim() || undefined,
         });
@@ -435,7 +438,8 @@ export const TrainersAdminView: React.FC = () => {
                     type="number"
                     min="0"
                     value={activeMembersCount}
-                    onChange={(e) => setActiveMembersCount(Number(e.target.value))}
+                    onChange={(e) => setActiveMembersCount(e.target.value)}
+                    placeholder="0"
                     className="w-full px-3.5 py-2.5 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white font-mono"
                   />
                 </div>

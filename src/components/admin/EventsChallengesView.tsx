@@ -36,7 +36,7 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
   const [eventDate, setEventDate] = useState(new Date().toISOString().split('T')[0]);
   const [eventTime, setEventTime] = useState('07:00 AM – 09:30 AM');
   const [eventLocation, setEventLocation] = useState('Prime Fitness Arena, Shivaji Nagar');
-  const [maxCapacity, setMaxCapacity] = useState<number>(30);
+  const [maxCapacity, setMaxCapacity] = useState<string>('30');
 
   // Challenge form
   const [challengeTitle, setChallengeTitle] = useState('');
@@ -80,7 +80,7 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
         event_time: eventTime,
         location: eventLocation,
         registration_count: 0,
-        max_capacity: Number(maxCapacity) || 30,
+        max_capacity: maxCapacity.trim() === '' ? 30 : (parseInt(maxCapacity, 10) || 30),
         is_published: true,
       });
 
@@ -413,7 +413,8 @@ export const EventsChallengesView: React.FC<EventsChallengesViewProps> = ({ init
                   min="1"
                   max="500"
                   value={maxCapacity}
-                  onChange={e => setMaxCapacity(parseInt(e.target.value, 10) || 30)}
+                  onChange={e => setMaxCapacity(e.target.value)}
+                  placeholder="30"
                   className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700/80 rounded-lg text-white focus:border-[#f36b22] focus:outline-none font-mono"
                 />
               </div>

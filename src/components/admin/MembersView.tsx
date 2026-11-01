@@ -119,7 +119,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
   const [gender, setGender] = useState<'male' | 'female' | 'other'>('male');
   const [selectedPkgId, setSelectedPkgId] = useState('');
   const [startDate, setStartDate] = useState(getIndiaTodayDate());
-  const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [amountPaid, setAmountPaid] = useState<string>('0');
   const [emergencyContact, setEmergencyContact] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -127,7 +127,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
   // Renew Form
   const [renewPkgId, setRenewPkgId] = useState('');
   const [renewStartDate, setRenewStartDate] = useState(getIndiaTodayDate());
-  const [renewAmountPaid, setRenewAmountPaid] = useState<number>(0);
+  const [renewAmountPaid, setRenewAmountPaid] = useState<string>('0');
 
   const loadData = async () => {
     setLoading(true);
@@ -149,7 +149,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
     setPackages(pkgRes.packages.filter(p => p.is_active));
     if (pkgRes.packages.length > 0 && !selectedPkgId) {
       setSelectedPkgId(pkgRes.packages[0].id);
-      setAmountPaid(pkgRes.packages[0].price);
+      setAmountPaid(String(pkgRes.packages[0].price));
     }
     setLoading(false);
   };
@@ -211,7 +211,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
           );
           if (pkgMatch) {
             setSelectedPkgId(pkgMatch.id);
-            setAmountPaid(pkgMatch.price);
+            setAmountPaid(String(pkgMatch.price));
           }
         }
         setIsAddOpen(true);
@@ -239,7 +239,9 @@ export const MembersView: React.FC<MembersViewProps> = ({
   // Auto-calculated balance due for Add Member
   const calculatedBalanceDue = useMemo(() => {
     if (!activeSelectedPkg) return 0;
-    return Math.max(0, activeSelectedPkg.price - (amountPaid || 0));
+    const parsedPaid = amountPaid.trim() === '' ? 0 : parseFloat(amountPaid);
+    const validPaid = isNaN(parsedPaid) || parsedPaid < 0 ? 0 : parsedPaid;
+    return Math.max(0, activeSelectedPkg.price - validPaid);
   }, [activeSelectedPkg, amountPaid]);
 
   // Selected renew package object
@@ -260,7 +262,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
     setStartDate(getIndiaTodayDate());
     if (packages.length > 0) {
       setSelectedPkgId(packages[0].id);
-      setAmountPaid(packages[0].price);
+      setAmountPaid(String(packages[0].price));
     }
     setEmergencyContact('');
     setNotes('');
@@ -272,7 +274,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
     setSelectedPkgId(pkgId);
     const pkg = packages.find(p => p.id === pkgId);
     if (pkg) {
-      setAmountPaid(pkg.price);
+      setAmountPaid(String(pkg.price));
     }
   };
 
@@ -280,6 +282,12 @@ export const MembersView: React.FC<MembersViewProps> = ({
     e.preventDefault();
     if (!fullName.trim() || !phone.trim() || !activeSelectedPkg) {
       setFormError('Please enter full name, phone number, and select a package.');
+      return;
+    }
+
+    const parsedPaid = amountPaid.trim() === '' ? 0 : parseFloat(amountPaid);
+    if (isNaN(parsedPaid) || parsedPaid < 0) {
+      setFormError('Please enter a valid amount paid (0 or greater).');
       return;
     }
 
@@ -294,7 +302,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
         gender,
         package_id: activeSelectedPkg.id,
         start_date: startDate,
-        amount_paid: Number(amountPaid),
+        amount_paid: parsedPaid,
         balance_due: calculatedBalanceDue,
         emergency_contact: emergencyContact.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -311,12 +319,12 @@ export const MembersView: React.FC<MembersViewProps> = ({
     }
 
     // Automatically record initial fee in billing ledger if payment was collected
-    if (res.data && Number(amountPaid) > 0) {
+    if (res.data && parsedPaid > 0) {
       try {
         await recordPayment({
           member_id: res.data.id,
           member_name: res.data.full_name,
-          amount: Number(amountPaid),
+          amount: parsedPaid,
           payment_method: 'cash',
           reference_id: 'REGISTRATION',
           payment_date: startDate,
@@ -338,7 +346,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
     const defaultPkg = packages.find(p => p.id === m.package_id) || packages[0];
     if (defaultPkg) {
       setRenewPkgId(defaultPkg.id);
-      setRenewAmountPaid(defaultPkg.price);
+      setRenewAmountPaid(String(defaultPkg.price));
     }
     setRenewStartDate(m.expiry_date && m.expiry_date >= getIndiaTodayDate() ? m.expiry_date : getIndiaTodayDate());
     setIsRenewOpen(true);
@@ -348,24 +356,30 @@ export const MembersView: React.FC<MembersViewProps> = ({
     e.preventDefault();
     if (!selectedMember || !activeRenewPkg) return;
 
+    const parsedRenewPaid = renewAmountPaid.trim() === '' ? 0 : parseFloat(renewAmountPaid);
+    if (isNaN(parsedRenewPaid) || parsedRenewPaid < 0) {
+      setSyncError('Please enter a valid renewal amount (0 or greater).');
+      return;
+    }
+
     setIsSubmitting(true);
     const res = await renewMember(
       selectedMember.id,
       activeRenewPkg,
       renewStartDate,
-      Number(renewAmountPaid),
+      parsedRenewPaid,
       session
     );
     setIsSubmitting(false);
 
     if (res.success) {
       // Automatically record renewal payment in billing ledger
-      if (Number(renewAmountPaid) > 0) {
+      if (parsedRenewPaid > 0) {
         try {
           await recordPayment({
             member_id: selectedMember.id,
             member_name: selectedMember.full_name,
-            amount: Number(renewAmountPaid),
+            amount: parsedRenewPaid,
             payment_method: 'cash',
             reference_id: 'RENEWAL',
             payment_date: renewStartDate,
@@ -930,8 +944,10 @@ export const MembersView: React.FC<MembersViewProps> = ({
                     <input
                       type="number"
                       value={amountPaid}
-                      onChange={(e) => setAmountPaid(Number(e.target.value))}
+                      onChange={(e) => setAmountPaid(e.target.value)}
                       min={0}
+                      step="any"
+                      placeholder="0"
                       className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                     />
                   </div>
@@ -1044,7 +1060,7 @@ export const MembersView: React.FC<MembersViewProps> = ({
                     onChange={(e) => {
                       setRenewPkgId(e.target.value);
                       const p = packages.find(pkg => pkg.id === e.target.value);
-                      if (p) setRenewAmountPaid(p.price);
+                      if (p) setRenewAmountPaid(String(p.price));
                     }}
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
                   >
@@ -1084,8 +1100,10 @@ export const MembersView: React.FC<MembersViewProps> = ({
                   <input
                     type="number"
                     value={renewAmountPaid}
-                    onChange={(e) => setRenewAmountPaid(Number(e.target.value))}
+                    onChange={(e) => setRenewAmountPaid(e.target.value)}
                     min={0}
+                    step="any"
+                    placeholder="0"
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
                   />
                 </div>

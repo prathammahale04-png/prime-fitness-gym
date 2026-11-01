@@ -48,7 +48,7 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
   const [gender, setGender] = useState<'male' | 'female' | 'other'>('male');
   const [selectedPkgId, setSelectedPkgId] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [amountPaid, setAmountPaid] = useState<string>('0');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
   const [paymentReference, setPaymentReference] = useState('');
   const [recordPaymentReceipt, setRecordPaymentReceipt] = useState(true);
@@ -81,10 +81,10 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
       const matched = matchPackageFromEnquiry(enquiry.interested_package, packages);
       if (matched) {
         setSelectedPkgId(matched.id);
-        setAmountPaid(matched.price);
+        setAmountPaid(String(matched.price));
       } else if (packages.length > 0) {
         setSelectedPkgId(packages[0].id);
-        setAmountPaid(packages[0].price);
+        setAmountPaid(String(packages[0].price));
       }
 
       // Pre-fill notes with source and original details
@@ -106,7 +106,7 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
     setSelectedPkgId(pkgId);
     const chosen = packages.find((p) => p.id === pkgId);
     if (chosen) {
-      setAmountPaid(chosen.price);
+      setAmountPaid(String(chosen.price));
     }
   };
 
@@ -119,7 +119,9 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
   // Real-time calculated balance due
   const calculatedBalanceDue = useMemo(() => {
     if (!activePackage) return 0;
-    return Math.max(0, activePackage.price - (amountPaid || 0));
+    const parsed = amountPaid.trim() === '' ? 0 : parseFloat(amountPaid);
+    const validPaid = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+    return Math.max(0, activePackage.price - validPaid);
   }, [activePackage, amountPaid]);
 
   if (!isOpen || !enquiry) return null;
@@ -145,6 +147,12 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
       return;
     }
 
+    const parsedPaid = amountPaid.trim() === '' ? 0 : parseFloat(amountPaid);
+    if (isNaN(parsedPaid) || parsedPaid < 0) {
+      setFormError('Please enter a valid amount paid (0 or greater).');
+      return;
+    }
+
     setFormError(null);
     setIsSubmitting(true);
 
@@ -162,7 +170,7 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
         durationDays: activePackage.duration_days,
         packagePrice: activePackage.price,
         startDate,
-        amountPaid: Number(amountPaid) || 0,
+        amountPaid: parsedPaid,
         balanceDue: calculatedBalanceDue,
         paymentMethod,
         paymentReference: paymentReference.trim() || null,
@@ -487,8 +495,10 @@ export const ConvertEnquiryModal: React.FC<ConvertEnquiryModalProps> = ({
                   <input
                     type="number"
                     min="0"
+                    step="any"
                     value={amountPaid}
-                    onChange={(e) => setAmountPaid(Number(e.target.value))}
+                    onChange={(e) => setAmountPaid(e.target.value)}
+                    placeholder="0"
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 focus:border-[#f36b22] focus:outline-none rounded-lg text-xs text-white font-mono font-bold"
                   />
                 </div>

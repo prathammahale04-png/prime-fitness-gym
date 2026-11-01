@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Member, MembershipPackage } from '../../types/database.types';
 import { getMembers, addMember, renewMember, toggleMemberDeactivate, calculateExpiryDate, updateMemberPhone, syncCachedMembersToDatabase } from '../../services/memberService';
@@ -63,10 +64,53 @@ export const MembersView: React.FC<MembersViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'inactive'>('all');
 
   // Modals
+  const [mounted, setMounted] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isRenewOpen, setIsRenewOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [reminderModalItem, setReminderModalItem] = useState<ReminderMemberItem | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const prevScrollYRef = useRef<number>(0);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Lock background scroll and capture scroll position when modal is open, restore on close
+  useEffect(() => {
+    const isAnyModalOpen = isAddOpen || isRenewOpen;
+    if (!isAnyModalOpen) return;
+
+    // Record exact current scroll position before locking
+    const currentScrollY = window.scrollY;
+    prevScrollYRef.current = currentScrollY;
+
+    const originalOverflow = document.body.style.overflow;
+    const originalPaddingRight = document.body.style.paddingRight;
+
+    // Compensate for scrollbar disappearance to prevent layout shift
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isSubmitting) {
+        if (isAddOpen) setIsAddOpen(false);
+        if (isRenewOpen) setIsRenewOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      document.body.style.paddingRight = originalPaddingRight;
+      window.removeEventListener('keydown', handleKeyDown);
+      // Restore previous scroll position immediately
+      window.scrollTo({ top: prevScrollYRef.current, behavior: 'instant' });
+    };
+  }, [isAddOpen, isRenewOpen, isSubmitting]);
 
   // Add Member Form
   const [fullName, setFullName] = useState('');
@@ -79,7 +123,6 @@ export const MembersView: React.FC<MembersViewProps> = ({
   const [emergencyContact, setEmergencyContact] = useState('');
   const [notes, setNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Renew Form
   const [renewPkgId, setRenewPkgId] = useState('');
@@ -694,214 +737,255 @@ export const MembersView: React.FC<MembersViewProps> = ({
       </div>
 
       {/* Modal: Add New Member */}
-      {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-[#14171d] border border-neutral-800 w-full max-w-xl p-6 sm:p-8 relative shadow-2xl my-8">
-            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0" />
+      {isAddOpen && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overscroll-contain overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSubmitting) {
+              setIsAddOpen(false);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-member-modal-title"
+        >
+          <div
+            className="relative w-full max-w-xl bg-[#14171d] border border-neutral-800 shadow-2xl my-auto flex flex-col max-h-[calc(100vh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:max-h-[92dvh] overflow-hidden rounded-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0 z-10" />
 
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
-              <h3 className="font-headline font-black text-lg text-white uppercase tracking-tight">
+            {/* Persistent Modal Header */}
+            <div className="shrink-0 flex items-center justify-between px-5 sm:px-8 pt-5 sm:pt-6 pb-4 border-b border-neutral-800 bg-[#14171d]">
+              <h3
+                id="add-member-modal-title"
+                className="font-headline font-black text-lg text-white uppercase tracking-tight"
+              >
                 Register New Gym Member
               </h3>
               <button
+                type="button"
                 onClick={() => setIsAddOpen(false)}
-                className="p-1 text-neutral-400 hover:text-white"
+                disabled={isSubmitting}
+                className="p-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {formError && (
-              <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span>{formError}</span>
-              </div>
-            )}
+            {/* Internally Scrollable Form Body */}
+            <div className="flex-1 overflow-y-auto overscroll-contain scroll-smooth px-5 sm:px-8 py-5 sm:py-6 [-webkit-overflow-scrolling:touch]">
+              {formError && (
+                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span>{formError}</span>
+                </div>
+              )}
 
-            <form onSubmit={handleAddSubmit} className="mt-5 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form onSubmit={handleAddSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Rahul Patil"
+                      required
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Phone Number (10 Digits) *
+                    </label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. 9823012345"
+                      required
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Email Address (Optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="rahul@example.com"
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Gender
+                    </label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Package Selector */}
                 <div>
                   <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Full Name *
+                    Membership Package *
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {packages.map((pkg) => (
+                      <button
+                        type="button"
+                        key={pkg.id}
+                        onClick={() => handlePkgSelect(pkg.id)}
+                        className={`p-3 text-left border transition-all cursor-pointer ${
+                          selectedPkgId === pkg.id
+                            ? 'bg-[#f36b22]/10 border-[#f36b22] text-white shadow-xs'
+                            : 'bg-[#0e1014] border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                        }`}
+                      >
+                        <div className="font-headline font-bold text-xs uppercase text-white truncate">
+                          {pkg.name}
+                        </div>
+                        <div className="text-xs font-mono text-[#f36b22] mt-0.5">
+                          ₹{pkg.price.toLocaleString('en-IN')} · {pkg.duration_days} Days
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Dates & Billing */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Start Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Calculated Expiry Date
+                    </label>
+                    <div className="px-3 py-2 bg-[#0e1014] border border-neutral-800 text-emerald-400 text-xs font-mono font-bold flex items-center justify-between">
+                      <span>{calculatedExpiry}</span>
+                      <span className="text-[10px] text-neutral-500 font-normal">
+                        +{activeSelectedPkg?.duration_days} Days
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Amount Paid Today (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={amountPaid}
+                      onChange={(e) => setAmountPaid(Number(e.target.value))}
+                      min={0}
+                      className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                      Balance Due (₹)
+                    </label>
+                    <div className={`px-3 py-2 bg-[#0e1014] border border-neutral-800 text-xs font-mono font-bold ${calculatedBalanceDue > 0 ? 'text-amber-400' : 'text-neutral-400'}`}>
+                      ₹{calculatedBalanceDue.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Emergency Contact / Notes
                   </label>
                   <input
                     type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. Rahul Patil"
-                    required
+                    value={emergencyContact}
+                    onChange={(e) => setEmergencyContact(e.target.value)}
+                    placeholder="e.g. Father: 9822011223, Medical Notes"
                     className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Phone Number (10 Digits) *
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="e.g. 9823012345"
-                    required
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Email Address (Optional)
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="rahul@example.com"
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Gender
-                  </label>
-                  <select
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                <div className="flex justify-end gap-3 pt-4 pb-1 border-t border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
                   >
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Registering...' : 'Complete Registration'}
+                  </button>
                 </div>
-              </div>
-
-              {/* Package Selector */}
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Membership Package *
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {packages.map((pkg) => (
-                    <button
-                      type="button"
-                      key={pkg.id}
-                      onClick={() => handlePkgSelect(pkg.id)}
-                      className={`p-3 text-left border transition-all cursor-pointer ${
-                        selectedPkgId === pkg.id
-                          ? 'bg-[#f36b22]/10 border-[#f36b22] text-white shadow-xs'
-                          : 'bg-[#0e1014] border-neutral-800 text-neutral-400 hover:border-neutral-700'
-                      }`}
-                    >
-                      <div className="font-headline font-bold text-xs uppercase text-white truncate">
-                        {pkg.name}
-                      </div>
-                      <div className="text-xs font-mono text-[#f36b22] mt-0.5">
-                        ₹{pkg.price.toLocaleString('en-IN')} · {pkg.duration_days} Days
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dates & Billing */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Start Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Calculated Expiry Date
-                  </label>
-                  <div className="px-3 py-2 bg-[#0e1014] border border-neutral-800 text-emerald-400 text-xs font-mono font-bold flex items-center justify-between">
-                    <span>{calculatedExpiry}</span>
-                    <span className="text-[10px] text-neutral-500 font-normal">
-                      +{activeSelectedPkg?.duration_days} Days
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Amount Paid Today (₹)
-                  </label>
-                  <input
-                    type="number"
-                    value={amountPaid}
-                    onChange={(e) => setAmountPaid(Number(e.target.value))}
-                    min={0}
-                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                    Balance Due (₹)
-                  </label>
-                  <div className={`px-3 py-2 bg-[#0e1014] border border-neutral-800 text-xs font-mono font-bold ${calculatedBalanceDue > 0 ? 'text-amber-400' : 'text-neutral-400'}`}>
-                    ₹{calculatedBalanceDue.toLocaleString('en-IN')}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Emergency Contact / Notes
-                </label>
-                <input
-                  type="text"
-                  value={emergencyContact}
-                  onChange={(e) => setEmergencyContact(e.target.value)}
-                  placeholder="e.g. Father: 9822011223, Medical Notes"
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3 border-t border-neutral-800">
-                <button
-                  type="button"
-                  onClick={() => setIsAddOpen(false)}
-                  className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Registering...' : 'Complete Registration'}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal: Renew Membership */}
-      {isRenewOpen && selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
-          <div className="bg-[#14171d] border border-neutral-800 w-full max-w-md p-6 relative shadow-2xl">
-            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0" />
+      {isRenewOpen && selectedMember && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overscroll-contain overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isSubmitting) {
+              setIsRenewOpen(false);
+            }
+          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="renew-member-modal-title"
+        >
+          <div
+            className="relative w-full max-w-md bg-[#14171d] border border-neutral-800 shadow-2xl my-auto flex flex-col max-h-[calc(100vh-1.5rem)] max-h-[calc(100dvh-1.5rem)] sm:max-h-[90vh] overflow-hidden rounded-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-t-2 border-[#f36b22] absolute top-0 left-0 right-0 z-10" />
 
-            <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
+            <div className="shrink-0 flex items-center justify-between px-5 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-neutral-800 bg-[#14171d]">
               <div>
-                <h3 className="font-headline font-black text-base text-white uppercase tracking-tight">
+                <h3
+                  id="renew-member-modal-title"
+                  className="font-headline font-black text-base text-white uppercase tracking-tight"
+                >
                   Renew Membership
                 </h3>
                 <p className="text-xs text-neutral-400 mt-0.5">
@@ -909,88 +993,95 @@ export const MembersView: React.FC<MembersViewProps> = ({
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setIsRenewOpen(false)}
-                className="p-1 text-neutral-400 hover:text-white"
+                disabled={isSubmitting}
+                className="p-1 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleRenewSubmit} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Select Package
-                </label>
-                <select
-                  value={renewPkgId}
-                  onChange={(e) => {
-                    setRenewPkgId(e.target.value);
-                    const p = packages.find(pkg => pkg.id === e.target.value);
-                    if (p) setRenewAmountPaid(p.price);
-                  }}
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
-                >
-                  {packages.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} - ₹{p.price} ({p.duration_days} days)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  New Start Date
-                </label>
-                <input
-                  type="date"
-                  value={renewStartDate}
-                  onChange={(e) => setRenewStartDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  New Expiry Date
-                </label>
-                <div className="px-3 py-2 bg-[#0e1014] border border-neutral-800 text-emerald-400 text-xs font-mono font-bold">
-                  {calculatedRenewExpiry}
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 sm:px-6 py-5 sm:py-6 [-webkit-overflow-scrolling:touch]">
+              <form onSubmit={handleRenewSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Select Package
+                  </label>
+                  <select
+                    value={renewPkgId}
+                    onChange={(e) => {
+                      setRenewPkgId(e.target.value);
+                      const p = packages.find(pkg => pkg.id === e.target.value);
+                      if (p) setRenewAmountPaid(p.price);
+                    }}
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none"
+                  >
+                    {packages.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} - ₹{p.price} ({p.duration_days} days)
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Amount Received (₹)
-                </label>
-                <input
-                  type="number"
-                  value={renewAmountPaid}
-                  onChange={(e) => setRenewAmountPaid(Number(e.target.value))}
-                  min={0}
-                  className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    New Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={renewStartDate}
+                    onChange={(e) => setRenewStartDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                  />
+                </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-neutral-800">
-                <button
-                  type="button"
-                  onClick={() => setIsRenewOpen(false)}
-                  className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Processing...' : 'Confirm Renewal'}
-                </button>
-              </div>
-            </form>
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    New Expiry Date
+                  </label>
+                  <div className="px-3 py-2 bg-[#0e1014] border border-neutral-800 text-emerald-400 text-xs font-mono font-bold">
+                    {calculatedRenewExpiry}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-headline font-bold uppercase tracking-wider text-neutral-300 mb-1.5">
+                    Amount Received (₹)
+                  </label>
+                  <input
+                    type="number"
+                    value={renewAmountPaid}
+                    onChange={(e) => setRenewAmountPaid(Number(e.target.value))}
+                    min={0}
+                    className="w-full px-3 py-2 bg-[#0e1014] border border-neutral-700 text-white text-xs focus:border-[#f36b22] focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 pb-1 border-t border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsRenewOpen(false)}
+                    disabled={isSubmitting}
+                    className="px-4 py-2 border border-neutral-700 text-neutral-300 text-xs font-headline font-bold uppercase tracking-wider hover:bg-neutral-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2 bg-[#f36b22] hover:bg-[#d95614] text-white text-xs font-headline font-bold uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmitting ? 'Processing...' : 'Confirm Renewal'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* WhatsApp Expiry Reminder Modal */}
